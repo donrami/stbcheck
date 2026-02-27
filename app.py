@@ -45,12 +45,12 @@ if not os.environ.get("VERCEL"):
         # Fallback to console only if file logging is impossible
         print(f"Notice: File logging disabled (likely read-only environment or permission issue): {e}")
 
-# Global Session Pool for better resource management
-session_pool = requests.Session()
-session_pool.headers.update({
+# Default headers for portal communication
+PORTAL_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
     'Connection': 'keep-alive'
-})
+}
+
 
 app = FastAPI()
 
@@ -67,7 +67,8 @@ class StalkerPortal:
     def __init__(self, portal_url, mac_address):
         self.base_url = portal_url.rstrip('/')
         self.mac = mac_address.upper()
-        self.session = session_pool # Use global session
+        self.session = requests.Session()
+        self.session.headers.update(PORTAL_HEADERS)
         self.token = None
         self.active_path = None
         
@@ -256,9 +257,9 @@ def clean_stalker_url(raw_url):
     return u
 
 def process_single_portal(url, mac):
+    portal = StalkerPortal(url, mac)
     try:
         logger.info(f"Analyzing portal: {url} ({mac})")
-        portal = StalkerPortal(url, mac)
         if portal.handshake():
             profile = portal.get_profile()
             acc_info = portal.get_account_info()
@@ -370,7 +371,7 @@ def process_single_portal(url, mac):
                     unique_categories.append({"id": cid, "title": str(cat.get('title') or cat.get('name', ''))})
             
             logger.info(f"   -> Found {len(processed_channels)} channels and {len(unique_categories)} categories for {url}")
-            return {
+            res = {
                 "url": url,
                 "mac": mac,
                 "channel_count": len(processed_channels),
@@ -378,9 +379,17 @@ def process_single_portal(url, mac):
                 "channels": processed_channels,
                 "expiry": expiry
             }
+            # Explicitly cleanup local large refs before returning
+            del processed_channels
+            del all_channels
+            del categories
+            return res
     except Exception as e:
         logger.error(f"Error processing portal {url}: {e}")
+    finally:
+        portal.session.close()
     return None
+
 
 @app.post("/api/check")
 async def check_portals(req: CheckRequest):
@@ -435,25 +444,46 @@ async def check_portals(req: CheckRequest):
 
         yield f"data: {json.dumps({'type': 'start', 'total': len(pairs)})}\n\n"
         
-        results = []
-        for i, (url, mac) in enumerate(pairs):
-            try:
-                # Process with timeout
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(process_single_portal, url, mac),
-                    timeout=12.0
-                )
-                if result:
-                    results.append(result)
-            except asyncio.TimeoutError:
-                logger.warning(f"Timeout processing portal: {url}")
-            except Exception as e:
-                logger.error(f"Error in check_portals loop: {e}")
-            
-            yield f"data: {json.dumps({'type': 'progress', 'current': i + 1, 'total': len(pairs)})}\n\n"
+        # Concurrent processing with progress updates
+        semaphore = asyncio.Semaphore(15) # Process up to 15 portals concurrently
         
-        yield f"data: {json.dumps({'type': 'complete', 'results': results})}\n\n"
+        async def check_task(url, mac):
+            async with semaphore:
+                try:
+                    # Process with timeout
+                    return await asyncio.wait_for(
+                        asyncio.to_thread(process_single_portal, url, mac),
+                        timeout=20.0 # Increased timeout for concurrent load
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Timeout processing portal: {url}")
+                except Exception as e:
+                    logger.error(f"Error checking {url}: {e}")
+                return None
+
+        # Create tasks for all pairs
+        tasks = [check_task(url, mac) for url, mac in pairs]
+        
+        completed = 0
+        
+        # Use as_completed to yield progress as soon as each check finishes
+        # Each result is sent immediately to keep server RAM low
+        for future in asyncio.as_completed(tasks):
+            result = await future
+            completed += 1
+            if result:
+                yield f"data: {json.dumps({'type': 'result', 'result': result})}\n\n"
+                # Help GC by clearing the result reference immediately
+                del result
+            
+            yield f"data: {json.dumps({'type': 'progress', 'current': completed, 'total': len(pairs)})}\n\n"
+        
+        yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+        # Final cleanup
+        tasks.clear()
         gc.collect()
+
+
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -465,14 +495,20 @@ def proxy_logo(target: str):
             logger.warning(f"Blocked unsafe SSRF attempt to: {real_url}")
             return Response(status_code=403)
             
-        # Fast check if it's a valid logo
-        r = requests.get(real_url, timeout=3, stream=True)
-        r.raise_for_status()
-        return StreamingResponse(r.iter_content(chunk_size=1024), media_type=r.headers.get('Content-Type', 'image/png'))
+        def iter_logo():
+            try:
+                with requests.get(real_url, timeout=5, stream=True) as r:
+                    r.raise_for_status()
+                    for chunk in r.iter_content(chunk_size=4096):
+                        yield chunk
+            except Exception as e:
+                logger.error(f"Logo proxy error for {real_url}: {e}")
+
+        return StreamingResponse(iter_logo(), media_type="image/png")
     except:
         # Return a transparent 1x1 pixel or a nice default image on failure
-        # For now, let's redirect to a reliable default icon
         return Response(status_code=302, headers={"Location": "https://cdn-icons-png.flaticon.com/512/3135/3135673.png"})
+
 
 @app.post("/api/get_link")
 async def get_link(req: StreamRequest):
