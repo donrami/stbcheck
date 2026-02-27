@@ -28,10 +28,14 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(log_formatter)
 logger.addHandler(stream_handler)
 
-# File handler for debugging
-file_handler = RotatingFileHandler("app.log", maxBytes=5*1024*1024, backupCount=2)
-file_handler.setFormatter(log_formatter)
-logger.addHandler(file_handler)
+# File handler for debugging (only if not on Vercel)
+if not os.environ.get("VERCEL"):
+    try:
+        file_handler = RotatingFileHandler("app.log", maxBytes=5*1024*1024, backupCount=2)
+        file_handler.setFormatter(log_formatter)
+        logger.addHandler(file_handler)
+    except Exception as e:
+        print(f"Could not initialize file logging: {e}")
 
 # Global Session Pool for better resource management
 session_pool = requests.Session()
