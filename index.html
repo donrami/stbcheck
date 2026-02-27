@@ -572,18 +572,52 @@
             const text = document.getElementById('portalInput').value;
             if (!text) return;
 
-            showLoader(true, "Discovering...");
+            showLoader(true, "Identifying servers...");
             try {
-                const res = await fetch('/api/check', {
+                const response = await fetch('/api/check', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text })
                 });
-                currentPortals = await res.json();
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let results = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                if (data.type === 'start') {
+                                    showLoader(true, `Found ${data.total} servers. Starting discovery...`);
+                                } else if (data.type === 'progress') {
+                                    showLoader(true, `Discovery in progress: ${data.current} / ${data.total} servers processed`);
+                                } else if (data.type === 'complete') {
+                                    results = data.results;
+                                }
+                            } catch (e) {
+                                console.error("Error parsing SSE chunk:", e);
+                            }
+                        }
+                    }
+                }
+
+                currentPortals = results;
                 await fetchVerified();
                 renderPortalList();
+                if (currentPortals.length === 0) {
+                    alert("No active portals found in the provided list.");
+                }
             } catch (e) {
-                alert("Error connecting to backend");
+                console.error("Discovery failed:", e);
+                alert("Error connecting to backend or processing list");
             } finally {
                 showLoader(false);
             }
