@@ -1,0 +1,23 @@
+🛰 PORTAL : http://dgt-voetsek.xyz:8080/c
+📍 IP : 2606:4700:3030::6815:58cd (Canada)
+🌍 SERVER TIMEZONE : America/Toronto
+✅ MAC : 00:1A:79:A3:16:BB
+📆 Expired on : January 28, 2027, 10:30 pm
+
+🛰 PORTAL : http://dgt-voetsek.xyz:8080/c
+📍 IP : 2606:4700:3030::6815:58cd (Canada)
+🌍 SERVER TIMEZONE : America/Toronto
+✅ MAC : 00:1A:79:C4:45:C0
+📆 Expired on : March 4, 2026, 6:14 pm
+
+🛰 PORTAL : http://dgt-voetsek.xyz:8080/c
+📍 IP : 2606:4700:3030::6815:58cd (Canada)
+🌍 SERVER TIMEZONE : America/Toronto
+✅ MAC : 00:1A:79:A3:16:8E
+📆 Expired on : February 18, 2027, 8:22 am
+
+🛰 PORTAL : http://dgt-voetsek.xyz:8080/c
+📍 IP : 2606:4700:3030::6815:58cd (Canada)
+🌍 SERVER TIMEZONE : America/Toronto
+✅ MAC : 00:1A:79:BC:EA:5B
+📆 Expired on : August 27, 2026, 5:27 pm
