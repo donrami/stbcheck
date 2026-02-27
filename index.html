@@ -643,13 +643,8 @@
                 <div class="error-title" id="playerErrorTitle">Playback Failed</div>
                 <div class="error-desc" id="playerErrorDesc">This stream format (likely HEVC/H.265) is not supported by
                     your browser.</div>
-                <a id="playerErrorVlc" href="#" class="btn-external-fix" target="_blank">
-                    <i class="fas fa-external-link-alt"></i> OPEN IN EXTERNAL PLAYER
-                </a>
             </div>
-            <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span> <a id="vlc-link" href="#"
-                    style="color: #3b82f6; margin-left:10px; text-decoration:none; display:none;" target="_blank"><i
-                        class="fas fa-external-link-alt"></i> External Player</a></div>
+            <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span></div>
         </div>
 
         <div class="channels-grid" id="channelsGrid">
@@ -710,6 +705,22 @@
         async function checkPortals() {
             const text = document.getElementById('portalInput').value;
             if (!text) return;
+
+            // Clear previous results
+            currentPortals = [];
+            activePortal = null;
+            activeCategory = 'all';
+            document.getElementById('portalList').innerHTML = '';
+            document.getElementById('categoriesSidebar').style.display = 'none';
+            document.getElementById('categoryList').innerHTML = '';
+            document.getElementById('channelsGrid').innerHTML = `
+                <div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">
+                    <i class="fas fa-tv fa-3x" style="display: block; margin-bottom: 15px; opacity: 0.3;"></i>
+                    Select a portal to view channels
+                </div>
+            `;
+            stopPlayers();
+            document.getElementById('now-playing').style.display = 'none';
 
             showLoader(true, "Identifying servers...");
             try {
@@ -1006,10 +1017,21 @@
                 });
                 const data = await res.json();
                 if (data.url) {
+                    // Validate the stream before starting it
+                    const urlParams = new URLSearchParams(data.url.split('?')[1]);
+                    const checkRes = await fetch(`/api/check_stream?target=${urlParams.get('target')}&mac=${urlParams.get('mac')}&origin=${urlParams.get('origin')}`);
+                    const checkData = await checkRes.json();
+
+                    if (checkData.status === 'error') {
+                        document.getElementById('ch-name-display').innerText = ch.name + " (" + checkData.message + ")";
+                        document.getElementById('playerErrorTitle').innerText = "Portal Error";
+                        document.getElementById('playerErrorDesc').innerText = checkData.message + ". The portal refused the connection (likely an IP block or region lock).";
+                        document.getElementById('playerErrorOverlay').style.display = 'flex';
+                        return;
+                    }
+
                     // Make the proxy URL absolute for worker compatibility
                     const absoluteUrl = window.location.origin + data.url;
-                    document.getElementById('vlc-link').href = absoluteUrl;
-                    document.getElementById('vlc-link').style.display = 'inline';
                     startPlayer(absoluteUrl, ch.name);
                 } else {
                     showAlert("Could not get stream link");
@@ -1019,6 +1041,7 @@
                 showAlert("Playback error or Portal rejected the link");
             }
         }
+
 
         function stopPlayers() {
             if (hls) { hls.destroy(); hls = null; }
@@ -1105,7 +1128,6 @@
                         console.error("MPEG-TS Playback failed:", { error, detail, info, message: errorMsg_raw });
 
                         let errorMsg = "Playback Error";
-                        let hideVlc = false;
                         const stats = mpegPlayer ? mpegPlayer.statisticsInfo : null;
                         const isEmpty = (stats && stats.totalDataReceived < 1024);
 
@@ -1113,7 +1135,6 @@
                             errorMsg = "Network/Portal Error";
                         } else if (isEmpty) {
                             errorMsg = "Empty Stream from Portal";
-                            hideVlc = true;
                         } else {
                             // CONSERVATIVE detection: Only blame HEVC if we see specific codec strings
                             const errorStr = (errorMsg_raw + " " + (info && info.msg ? info.msg : "")).toLowerCase();
@@ -1127,14 +1148,12 @@
                             if (isHEVC) {
                                 errorMsg = "HEVC/H.265 Not Supported";
                                 document.getElementById('playerErrorTitle').innerText = "Codec Not Supported";
-                                document.getElementById('playerErrorDesc').innerText = "This channel uses HEVC (H.265) video. Your browser cannot play this natively, but it will work in VLC.";
-                                document.getElementById('playerErrorVlc').href = document.getElementById('vlc-link').href;
+                                document.getElementById('playerErrorDesc').innerText = "This channel uses HEVC (H.265) video. Your browser cannot play this natively.";
                                 document.getElementById('playerErrorOverlay').style.display = 'flex';
                             } else if (isUnsupportedFormat) {
                                 errorMsg = "Format Not Supported";
                                 document.getElementById('playerErrorTitle').innerText = "Playback Error";
                                 document.getElementById('playerErrorDesc').innerText = "Your browser failed to decode this MPEG-TS stream. This happens often on some Linux distributions due to missing browser codecs.";
-                                document.getElementById('playerErrorVlc').href = document.getElementById('vlc-link').href;
                                 document.getElementById('playerErrorOverlay').style.display = 'flex';
                             } else {
                                 console.log("Attempting direct src fallback for error:", errorMsg_raw);
@@ -1142,18 +1161,12 @@
                                 video.play().catch(e => {
                                     console.error("Fallback playback failed:", e);
                                     document.getElementById('ch-name-display').innerText = name + " (Format Not Supported)";
-                                    document.getElementById('vlc-link').style.cssText = "color: #fbbf24; font-weight: bold; font-size: 1.1rem; animation: pulse 2s infinite;";
-                                    document.getElementById('playerErrorVlc').href = document.getElementById('vlc-link').href;
                                     document.getElementById('playerErrorOverlay').style.display = 'flex';
                                 });
                             }
                         }
 
                         document.getElementById('ch-name-display').innerText = name + " (" + errorMsg + ")";
-                        if (hideVlc) {
-                            document.getElementById('vlc-link').style.display = 'none';
-                            document.getElementById('playerErrorOverlay').style.display = 'none';
-                        }
                     };
 
                     mpegPlayer.play().then(() => {

@@ -447,6 +447,48 @@ async def get_link(req: StreamRequest):
             return {"url": proxy_url}
     raise HTTPException(status_code=400, detail="Could not create link or link not found")
 
+@app.get("/api/check_stream")
+def check_stream(target: str, mac: str, origin: Optional[str] = None):
+    try:
+        decoded_bytes = base64.b64decode(target)
+        real_url = decoded_bytes.decode('utf-8', errors='ignore')
+        
+        referer = None
+        if origin:
+            try:
+                referer = base64.b64decode(origin).decode('utf-8', errors='ignore')
+            except: pass
+            
+        if not is_safe_url(real_url):
+            return {"status": "error", "code": 403, "message": "Unsafe URL"}
+            
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
+            'X-User-Agent': 'model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c',
+            'Cookie': f'mac={mac.upper()}',
+            'Accept': '*/*',
+            'Connection': 'keep-alive'
+        }
+        
+        if referer:
+            headers['Referer'] = referer
+        else:
+            parsed = urlparse(real_url)
+            headers['Referer'] = f"{parsed.scheme}://{parsed.netloc}/"
+
+        # Just a HEAD or a minimal GET to check the status
+        with requests.get(real_url, headers=headers, stream=True, timeout=10, verify=False) as r:
+            logger.info(f"Stream check for {real_url}: {r.status_code}")
+            return {
+                "status": "success" if r.status_code < 400 else "error",
+                "code": r.status_code,
+                "message": f"Portal returned {r.status_code}" if r.status_code >= 400 else "OK"
+            }
+    except Exception as e:
+        logger.error(f"Stream check error: {e}")
+        return {"status": "error", "code": 500, "message": str(e)}
+
+
 @app.get("/api/proxy_stream")
 def proxy_stream(target: str, mac: str, request: Request, origin: Optional[str] = None):
     try:
