@@ -111,6 +111,16 @@
             background: rgba(59, 130, 246, 0.2);
         }
 
+        .portal-item.empty {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        .portal-item.empty:hover {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+
         .portal-name {
             font-weight: 600;
             font-size: 0.9rem;
@@ -695,8 +705,9 @@
             list.innerHTML = '';
             currentPortals.forEach((p, idx) => {
                 const isVerified = verifiedServers.some(v => v.url === p.url && v.mac === p.mac);
+                const isEmpty = (p.channel_count === 0);
                 const div = document.createElement('div');
-                div.className = `portal-item ${activePortal === idx ? 'active' : ''}`;
+                div.className = `portal-item ${activePortal === idx ? 'active' : ''} ${isEmpty ? 'empty' : ''}`;
                 div.onclick = (e) => {
                     if (e.target.classList.contains('btn-verify')) return;
                     selectPortal(idx);
