@@ -358,16 +358,34 @@ async def check_portals(req: CheckRequest):
     
     pairs = list(dict.fromkeys(pairs))
     
-    if not pairs:
-        return []
+    async def event_generator():
+        if not pairs:
+            yield f"data: {json.dumps({'type': 'complete', 'results': []})}\n\n"
+            return
 
-    # Process portals in parallel
-    tasks = [asyncio.to_thread(process_single_portal, url, mac) for url, mac in pairs]
-    results_raw = await asyncio.gather(*tasks)
-    results = [r for r in results_raw if r is not None]
-    
-    gc.collect()
-    return results
+        yield f"data: {json.dumps({'type': 'start', 'total': len(pairs)})}\n\n"
+        
+        results = []
+        for i, (url, mac) in enumerate(pairs):
+            try:
+                # Process with timeout
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(process_single_portal, url, mac),
+                    timeout=12.0
+                )
+                if result:
+                    results.append(result)
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout processing portal: {url}")
+            except Exception as e:
+                logger.error(f"Error in check_portals loop: {e}")
+            
+            yield f"data: {json.dumps({'type': 'progress', 'current': i + 1, 'total': len(pairs)})}\n\n"
+        
+        yield f"data: {json.dumps({'type': 'complete', 'results': results})}\n\n"
+        gc.collect()
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/proxy_logo")
 def proxy_logo(target: str):
