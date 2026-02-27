@@ -1022,8 +1022,15 @@
                         console.error("MPEG Error:", type, detail, info);
 
                         let errorMsg = "Playback Error";
+                        let hideVlc = false;
+                        const stats = mpegPlayer.statisticsInfo;
+                        const isEmpty = stats && stats.totalDataReceived < 1024;
+
                         if (detail === 'NetworkError') {
                             errorMsg = "Network/Portal Error";
+                        } else if (isEmpty) {
+                            errorMsg = "Empty Stream from Portal";
+                            hideVlc = true;
                         } else {
                             // Detect HEVC in error info if possible
                             const isHEVC = (info && info.msg && (info.msg.toLowerCase().includes('hevc') || info.msg.toLowerCase().includes('hvc1'))) ||
@@ -1043,6 +1050,9 @@
                         }
 
                         document.getElementById('ch-name-display').innerText = name + " (" + errorMsg + ")";
+                        if (hideVlc) {
+                            document.getElementById('vlc-link').style.display = 'none';
+                        }
                     });
                 } else {
                     // Raw fallback
