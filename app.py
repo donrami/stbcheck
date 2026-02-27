@@ -447,9 +447,25 @@ def proxy_stream(target: str, mac: str, request: Request):
             try:
                 # Setting stream=True is critical for memory
                 with session_pool.get(real_url, headers=headers, stream=True, timeout=15) as r:
-                    # Propagate 206 Partial Content or other successful statuses
+                    if r.status_code >= 400:
+                        logger.error(f"Portal returned error {r.status_code} for {real_url}")
+                        return
+
+                    first_chunk = True
                     for chunk in r.iter_content(chunk_size=64*1024): # 64KB chunks are often better for low latency
                         if chunk:
+                            if first_chunk:
+                                # Check for MPEG-TS sync byte (0x47) in the first 188 bytes
+                                # 0x47 is 71 in decimal
+                                if len(chunk) >= 1 and chunk[0] != 0x47:
+                                    # Might not be at index 0, but usually is for fresh streams
+                                    # Let's search for it if it's not at the start
+                                    sync_index = chunk.find(b'\x47')
+                                    if sync_index == -1:
+                                        logger.warning(f"No sync byte found in first chunk for {real_url}. Data might not be MPEG-TS.")
+                                    else:
+                                        logger.info(f"Sync byte found at index {sync_index} for {real_url}")
+                                first_chunk = False
                             yield chunk
                         else:
                             break
@@ -460,7 +476,8 @@ def proxy_stream(target: str, mac: str, request: Request):
         content_type = 'video/MP2T'
         try:
             with session_pool.head(real_url, headers=headers, timeout=3) as head:
-                content_type = head.headers.get('Content-Type', content_type)
+                if head.status_code < 400:
+                    content_type = head.headers.get('Content-Type', content_type)
         except:
             pass
 
@@ -471,7 +488,8 @@ def proxy_stream(target: str, mac: str, request: Request):
                 "Accept-Ranges": "bytes",
                 "Access-Control-Allow-Origin": "*",
                 "Cache-Control": "no-cache",
-                "X-Content-Type-Options": "nosniff"
+                "X-Content-Type-Options": "nosniff",
+                "X-Proxy-Target": real_url[:50] + "..."
             }
         )
     except Exception as e:
