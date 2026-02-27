@@ -52,7 +52,9 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-shrink: 0;
         }
+
 
         .logo i {
             filter: drop-shadow(0 0 8px var(--accent-glow));
@@ -70,7 +72,9 @@
             resize: none;
             outline: none;
             transition: 0.3s;
+            flex-shrink: 0;
         }
+
 
         textarea:focus {
             border-color: var(--accent);
@@ -87,7 +91,9 @@
             font-weight: 600;
             cursor: pointer;
             transition: 0.3s;
+            flex-shrink: 0;
         }
+
 
         .btn-check:hover {
             transform: translateY(-2px);
@@ -354,7 +360,9 @@
             align-items: center;
             justify-content: center;
             gap: 10px;
+            flex-shrink: 0;
         }
+
 
         .btn-view-verified:hover {
             background: rgba(255, 255, 255, 0.1);
@@ -670,10 +678,194 @@
             filter: brightness(1.1);
             box-shadow: 0 6px 16px var(--accent-glow);
         }
+
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+                height: 100vh;
+                overflow: hidden;
+            }
+
+            .sidebar {
+                position: fixed;
+                left: -320px;
+                top: 0;
+                bottom: 0;
+                width: 300px;
+                transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+                z-index: 1000;
+                background: #0f172a;
+                box-shadow: 20px 0 50px rgba(0, 0, 0, 0.8);
+                overflow-y: auto;
+                padding-top: 60px;
+                /* Space for close button */
+            }
+
+            .sidebar.show {
+                transform: translateX(320px);
+            }
+
+            .sidebar-close {
+                display: block !important;
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                background: rgba(255, 255, 255, 0.05);
+                border: none;
+                color: white;
+                font-size: 1.5rem;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+            }
+
+            .mobile-header {
+                display: flex !important;
+                align-items: center;
+                justify-content: space-between;
+                padding: 12px 20px;
+                background: #1e293b;
+                border-bottom: 2px solid rgba(59, 130, 246, 0.2);
+                z-index: 500;
+                flex-shrink: 0;
+            }
+
+            .mobile-toggle {
+                background: var(--accent);
+                border: none;
+                color: white;
+                font-size: 1.1rem;
+                width: 40px;
+                height: 40px;
+                border-radius: 10px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 12px var(--accent-glow);
+            }
+
+            .categories-sidebar {
+                width: 100%;
+                height: auto;
+                min-height: 60px;
+                max-height: 60px;
+                border-right: none;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                flex-direction: row !important;
+                padding: 0 15px;
+                overflow-x: auto;
+                overflow-y: hidden;
+                white-space: nowrap;
+                align-items: center;
+                gap: 12px;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                /* Firefox */
+            }
+
+            .categories-sidebar::-webkit-scrollbar {
+                display: none;
+                /* Chrome/Safari */
+            }
+
+            .categories-sidebar [style*="font-size: 0.8rem"] {
+                display: none;
+            }
+
+            .category-item {
+                margin-bottom: 0;
+                padding: 8px 18px;
+                display: inline-block;
+                flex-shrink: 0;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            .category-item.active {
+                background: var(--accent);
+                border-color: var(--accent);
+            }
+
+            .player-container {
+                height: auto;
+                aspect-ratio: 16 / 9;
+                flex-shrink: 0;
+            }
+
+            .main-content {
+                height: auto;
+                flex-grow: 1;
+                overflow: hidden;
+            }
+
+            .channels-grid {
+                padding: 15px;
+                grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+                gap: 12px;
+            }
+
+            .channel-card {
+                padding: 12px 8px;
+            }
+
+            .channel-logo {
+                width: 45px;
+                height: 45px;
+                margin-bottom: 8px;
+            }
+
+            .channel-name {
+                font-size: 0.75rem;
+            }
+
+            .sidebar-backdrop {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                backdrop-filter: blur(5px);
+                z-index: 999;
+            }
+
+            .sidebar-backdrop.show {
+                display: block;
+            }
+        }
+
+        .mobile-header {
+            display: none;
+        }
+
+        .sidebar-backdrop {
+            display: none;
+        }
+
+        .sidebar-close {
+            display: none;
+        }
     </style>
 </head>
 
 <body>
+
+    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
+
+    <div class="mobile-header">
+        <div class="logo" style="margin-bottom: 0; font-size: 1.2rem;">
+            <i class="fas fa-satellite-dish"></i> STBcheck
+        </div>
+        <button class="mobile-toggle" onclick="toggleSidebar()">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
 
     <div id="loader">
         <div class="spinner"></div>
@@ -681,6 +873,9 @@
     </div>
 
     <div class="sidebar">
+        <button class="sidebar-close" onclick="toggleSidebar()">
+            <i class="fas fa-times"></i>
+        </button>
         <div class="logo"><i class="fas fa-satellite-dish"></i> STBcheck</div>
         <textarea id="portalInput" placeholder="Paste your Portal/MAC list here..."></textarea>
         <button class="btn-check" onclick="checkPortals()">START DISCOVERY</button>
@@ -757,14 +952,26 @@
         let mpegPlayer = null;
         let verifiedServers = [];
 
+        const escapeHTML = (str) => {
+            if (!str) return "";
+            return String(str).replace(/[&<>"']/g, m => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[m]);
+        };
+
         // Simple IndexedDB wrapper for larger data (channels can exceed 5MB localStorage limit)
         const dbPromise = new Promise((resolve, reject) => {
-            const request = indexedDB.open('STBCheckDB', 1);
+            const request = indexedDB.open('STBCheckDB', 2); // Bump version for new store
             request.onerror = () => reject(request.error);
             request.onsuccess = () => resolve(request.result);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
-                db.createObjectStore('state', { keyPath: 'id' });
+                if (!db.objectStoreNames.contains('state')) {
+                    db.createObjectStore('state', { keyPath: 'id' });
+                }
+                if (!db.objectStoreNames.contains('portalChannels')) {
+                    db.createObjectStore('portalChannels', { keyPath: 'portalId' });
+                }
             };
         });
 
@@ -782,18 +989,63 @@
         async function dbGet(key) {
             const db = await dbPromise;
             return new Promise((resolve, reject) => {
-                const tx = db.transaction('state', 'readonly');
-                const store = tx.objectStore('state');
-                const request = store.get(key);
-                request.onsuccess = () => resolve(request.result ? request.result.value : null);
+                try {
+                    const tx = db.transaction('state', 'readonly');
+                    const store = tx.objectStore('state');
+                    const request = store.get(key);
+                    request.onsuccess = () => resolve(request.result ? request.result.value : null);
+                    request.onerror = () => reject(request.error);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+
+        async function savePortalChannels(url, mac, channels) {
+            const db = await dbPromise;
+            const portalId = `${url}|${mac}`;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('portalChannels', 'readwrite');
+                const store = tx.objectStore('portalChannels');
+                store.put({ portalId, channels });
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function getPortalChannels(url, mac) {
+            const db = await dbPromise;
+            const portalId = `${url}|${mac}`;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('portalChannels', 'readonly');
+                const store = tx.objectStore('portalChannels');
+                const request = store.get(portalId);
+                request.onsuccess = () => resolve(request.result ? request.result.channels : []);
                 request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function clearPortalChannels() {
+            const db = await dbPromise;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('portalChannels', 'readwrite');
+                const store = tx.objectStore('portalChannels');
+                store.clear();
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
             });
         }
 
         async function saveState() {
             try {
                 // Large data goes to IndexedDB
-                await dbSet('currentPortals', currentPortals);
+                // Large metadata goes to IndexedDB (channels are handled separately)
+                // We strip channels before saving currentPortals to 'state' store for RAM optimization
+                const portalsToSave = currentPortals.map(p => {
+                    const { channels, ...metadata } = p;
+                    return metadata;
+                });
+                await dbSet('currentPortals', portalsToSave);
 
                 // Small metadata can stay in localStorage
                 localStorage.setItem('stb_activePortal', JSON.stringify(activePortal));
@@ -824,9 +1076,20 @@
                     renderPortalList();
 
                     if (activePortal !== null && activePortal < currentPortals.length) {
-                        document.getElementById('categoriesSidebar').style.display = 'flex';
-                        renderCategories();
-                        renderChannelsGrid();
+                        const p = currentPortals[activePortal];
+
+                        // Load channels for the active portal
+                        showLoader(true, "Restoring channels...");
+                        getPortalChannels(p.url, p.mac).then(channels => {
+                            p.channels = channels;
+                            document.getElementById('categoriesSidebar').style.display = 'flex';
+                            renderCategories();
+                            renderChannelsGrid();
+                            showLoader(false);
+                        }).catch(e => {
+                            console.error("Failed to restore channels:", e);
+                            showLoader(false);
+                        });
                     }
                 }
             } catch (e) {
@@ -878,7 +1141,8 @@
             `;
             stopPlayers();
             document.getElementById('now-playing').style.display = 'none';
-            saveState();
+            await clearPortalChannels();
+            await saveState();
 
             showLoader(true, "Identifying servers...");
             try {
@@ -912,10 +1176,20 @@
                                 const data = JSON.parse(line.substring(6));
                                 if (data.type === 'start') {
                                     showLoader(true, `Found ${data.total} servers. Starting discovery...`);
+                                } else if (data.type === 'result') {
+                                    const result = data.result;
+                                    const { channels, ...metadata } = result;
+
+                                    // Store channels in IDB, keep only metadata in RAM
+                                    await savePortalChannels(metadata.url, metadata.mac, channels);
+
+                                    results.push(metadata);
+                                    currentPortals = results;
+                                    renderPortalList();
                                 } else if (data.type === 'progress') {
                                     showLoader(true, `Discovery in progress: ${data.current} / ${data.total} servers processed`);
                                 } else if (data.type === 'complete') {
-                                    results = data.results;
+                                    // All results received
                                 }
                             } catch (e) {
                                 console.error("Error parsing SSE JSON:", e, "Line:", line);
@@ -926,7 +1200,9 @@
 
                 currentPortals = results;
                 await fetchVerified();
-                saveState();
+                // saveState() is not strictly needed here as we updated currentPortals/channels as they came in
+                // but we call it to ensure small metadata (activePortal) is synced
+                await saveState();
                 renderPortalList();
                 if (currentPortals.length === 0) {
                     showAlert("No active portals found in the provided list.");
@@ -956,21 +1232,25 @@
                     if (e.target.closest('.portal-actions')) return;
                     selectPortal(idx);
                 };
+                const safeUrl = escapeHTML(p.url);
+                const safeMac = escapeHTML(p.mac);
+                const safeExpiry = escapeHTML(p.expiry || 'N/A');
+
                 div.innerHTML = `
                     <div class="portal-content-main">
-                        <div class="portal-name" title="${p.url}">${p.url}</div>
+                        <div class="portal-name" title="${safeUrl}">${safeUrl}</div>
                         <div class="portal-stats">
-                            <i class="fas fa-microchip" style="font-size: 0.7rem; opacity: 0.6;"></i> ${p.mac} <br>
+                            <i class="fas fa-microchip" style="font-size: 0.7rem; opacity: 0.6;"></i> ${safeMac} <br>
                             <i class="fas fa-tv" style="font-size: 0.7rem; opacity: 0.6;"></i> ${p.channel_count} Ch • 
-                            <i class="fas fa-calendar-alt" style="font-size: 0.7rem; opacity: 0.6;"></i> ${p.expiry || 'N/A'}
+                            <i class="fas fa-calendar-alt" style="font-size: 0.7rem; opacity: 0.6;"></i> ${safeExpiry}
                         </div>
                     </div>
                     ${!isEmpty ? `
                     <div class="portal-actions">
-                        <button class="btn-action" onclick="copyIndividualValue('${p.url}', this)" title="Copy URL">
+                        <button class="btn-action" onclick="copyIndividualValue('${safeUrl.replace(/'/g, "\\'")}', this)" title="Copy URL">
                             <i class="fas fa-link"></i>
                         </button>
-                        <button class="btn-action" onclick="copyIndividualValue('${p.mac}', this)" title="Copy MAC Address">
+                        <button class="btn-action" onclick="copyIndividualValue('${safeMac.replace(/'/g, "\\'")}', this)" title="Copy MAC Address">
                             <i class="fas fa-microchip"></i>
                         </button>
                         <button class="btn-verify ${isVerified ? 'is-verified' : ''}" onclick="verifyServer(${idx})" title="${isVerified ? 'Unmark as verified' : 'Mark as verified'}">
@@ -1015,12 +1295,14 @@
             verifiedServers.forEach((v, idx) => {
                 const div = document.createElement('div');
                 div.className = 'verified-item';
+                const safeUrl = escapeHTML(v.url);
+                const safeMac = escapeHTML(v.mac);
                 div.innerHTML = `
                     <div class="verified-info">
-                        <div class="verified-url">${v.url}</div>
-                        <div class="verified-mac">${v.mac}</div>
+                        <div class="verified-url">${safeUrl}</div>
+                        <div class="verified-mac">${safeMac}</div>
                     </div>
-                    <button class="btn-copy" onclick="copyToClipboard('${v.url}', '${v.mac}', this)" title="Copy Portal Detail">
+                    <button class="btn-copy" onclick="copyToClipboard('${safeUrl.replace(/'/g, "\\'")}', '${safeMac.replace(/'/g, "\\'")}', this)" title="Copy Portal Detail">
                         <i class="fas fa-copy"></i>
                     </button>
                 `;
@@ -1060,13 +1342,28 @@
             }
         }
 
-        function selectPortal(idx) {
+        async function selectPortal(idx) {
             activePortal = idx;
-            activeCategory = 'all'; // Reset category on portal change
+            activeCategory = 'all';
+
+            const p = currentPortals[activePortal];
+
+            // Load channels from IndexedDB if not already in RAM for this portal
+            if (!p.channels) {
+                showLoader(true, "Loading channels...");
+                try {
+                    p.channels = await getPortalChannels(p.url, p.mac);
+                } catch (e) {
+                    console.error("Failed to load channels:", e);
+                    p.channels = [];
+                } finally {
+                    showLoader(false);
+                }
+            }
 
             document.getElementById('categoriesSidebar').style.display = 'flex';
 
-            saveState();
+            await saveState();
             renderPortalList();
             renderCategories();
             renderChannelsGrid();
@@ -1099,8 +1396,9 @@
                 if (count === 0) return; // Skip empty categories
 
                 const div = document.createElement('div');
+                const safeTitle = escapeHTML(catTitle);
                 div.className = `category-item ${activeCategory == catId ? 'active' : ''}`;
-                div.innerText = `${catTitle} (${count})`;
+                div.innerText = `${safeTitle} (${count})`;
                 div.onclick = () => selectCategory(catId);
                 list.appendChild(div);
             });
@@ -1148,9 +1446,10 @@
                 div.className = 'channel-card';
                 div.onclick = () => playChannel(ch);
                 const logo = ch.logo && ch.logo !== 'null' ? ch.logo : 'https://cdn-icons-png.flaticon.com/512/3135/3135673.png';
+                const safeName = escapeHTML(ch.name);
                 div.innerHTML = `
                     <img src="${logo}" class="channel-logo" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3135/3135673.png'">
-                    <div class="channel-name" title="${ch.name}">${ch.name}</div>
+                    <div class="channel-name" title="${safeName}">${safeName}</div>
                 `;
                 grid.appendChild(div);
             });
@@ -1363,6 +1662,24 @@
                 }
             }
         }
+        function toggleSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('show');
+            backdrop.classList.toggle('show');
+        }
+
+        // Close sidebar when clicking a portal or category on mobile
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768) {
+                if (e.target.closest('.portal-item') || e.target.closest('.btn-check')) {
+                    const sidebar = document.querySelector('.sidebar');
+                    if (sidebar.classList.contains('show')) {
+                        toggleSidebar();
+                    }
+                }
+            }
+        });
     </script>
 </body>
 
