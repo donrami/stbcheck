@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STBcheck</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background: rgba(15, 23, 42, 0.95);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 25px;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo i {
+            filter: drop-shadow(0 0 8px var(--accent-glow));
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: white;
+            padding: 12px;
+            font-size: 0.9rem;
+            resize: none;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        .btn-check {
+            margin-top: 15px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .btn-check:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.1);
+        }
+
+        .porta-list {
+            margin-top: 20px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+
+        .portal-item:hover {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .portal-item.active {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.2);
+        }
+
+        .portal-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .portal-stats {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 5px;
+        }
+
+        .portal-item {
+            position: relative;
+            background: var(--card-bg);
+            padding: 15px 70px 15px 15px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: 0.3s;
+        }
+
+        .btn-verify {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #22c55e;
+            color: white;
+            border: none;
+            padding: 5px 8px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            opacity: 0;
+            transition: 0.3s;
+            pointer-events: none;
+            min-width: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-verify.is-verified {
+            opacity: 0.3;
+            pointer-events: auto;
+        }
+
+        .portal-item:hover .btn-verify {
+            opacity: 1 !important;
+            pointer-events: auto;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: var(--bg-dark);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            border-radius: 20px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .close-modal:hover {
+            color: white;
+        }
+
+        .verified-list {
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .verified-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            border: 1px solid transparent;
+            transition: 0.3s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .verified-item:hover {
+            border-color: rgba(59, 130, 246, 0.3);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .verified-info {
+            flex-grow: 1;
+            min-width: 0;
+        }
+
+        .btn-copy {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-dim);
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: 0.2s;
+            flex-shrink: 0;
+        }
+
+        .btn-copy:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+            transform: scale(1.05);
+        }
+
+        .btn-copy.copied {
+            background: #22c55e;
+            color: white;
+            border-color: #22c55e;
+        }
+
+        .verified-url {
+            font-weight: 600;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+
+        .verified-mac {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 4px;
+        }
+
+        .btn-view-verified {
+            margin-top: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-view-verified:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--accent);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background: #0f172a;
+        }
+
+        .categories-sidebar {
+            width: 250px;
+            background: rgba(15, 23, 42, 0.85);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 10px;
+            overflow-y: auto;
+            display: none;
+            /* Hidden until portal selected */
+        }
+
+        .category-item {
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            transition: 0.2s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .category-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+
+        .category-item.active {
+            background: var(--accent);
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Video Player Area */
+        .player-container {
+            width: 100%;
+            height: 400px;
+            background: black;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+
+        #now-playing {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 30px;
+            backdrop-filter: blur(10px);
+            font-weight: 600;
+            display: none;
+        }
+
+        /* Grid Area */
+        .channels-grid {
+            padding: 25px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            align-content: start;
+            gap: 15px;
+            overflow-y: auto;
+            flex-grow: 1;
+            transition: opacity 0.3s ease;
+        }
+
+        .channels-grid.loading {
+            opacity: 0.3;
+            pointer-events: none;
+        }
+
+        .channel-card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.3s;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            animation: fadeIn 0.4s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .channel-card:hover {
+            transform: scale(1.05);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--accent);
+        }
+
+        .channel-logo {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            object-fit: contain;
+        }
+
+        .channel-name {
+            font-size: 0.8rem;
+            font-weight: 500;
+            overflow: hidden;
+            height: 1.2rem;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        /* Loading Overlay */
+        #loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.9);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--accent-glow);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <div id="loader-text">Analyzing portals...</div>
+    </div>
+
+    <div class="sidebar">
+        <div class="logo"><i class="fas fa-satellite-dish"></i> STBcheck</div>
+        <textarea id="portalInput" placeholder="Paste your Portal/MAC list here..."></textarea>
+        <button class="btn-check" onclick="checkPortals()">START DISCOVERY</button>
+        <button class="btn-view-verified" onclick="showVerifiedModal()">
+            <i class="fas fa-check-circle"></i> VERIFIED SERVERS
+        </button>
+
+        <div class="porta-list" id="portalList">
+            <!-- Portals will appear here -->
+        </div>
+    </div>
+
+    <div class="categories-sidebar" id="categoriesSidebar">
+        <div
+            style="font-size: 0.8rem; font-weight: 600; color: var(--accent); margin-bottom: 15px; padding-left: 15px;">
+            CATEGORIES</div>
+        <div id="categoryList">
+            <!-- Categories will appear here -->
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="player-container">
+            <video id="video" controls></video>
+            <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span></div>
+        </div>
+
+        <div class="channels-grid" id="channelsGrid">
+            <div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">
+                <i class="fas fa-tv fa-3x" style="display: block; margin-bottom: 15px; opacity: 0.3;"></i>
+                Select a portal to view channels
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="verifiedModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Verified Servers</div>
+                <button class="close-modal" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="verified-list" id="verifiedList">
+                <!-- Verified servers will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.min.js"></script>
+    <script>
+        let currentPortals = [];
+        let activePortal = null;
+        let activeCategory = 'all';
+        let hls = null;
+        let mpegPlayer = null;
+        let verifiedServers = [];
+
+        async function fetchVerified() {
+            try {
+                const res = await fetch('/api/verified');
+                verifiedServers = await res.json();
+            } catch (e) {
+                console.error("Failed to fetch verified servers:", e);
+            }
+        }
+
+        async function checkPortals() {
+            const text = document.getElementById('portalInput').value;
+            if (!text) return;
+
+            showLoader(true, "Discovering...");
+            try {
+                const res = await fetch('/api/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                currentPortals = await res.json();
+                await fetchVerified();
+                renderPortalList();
+            } catch (e) {
+                alert("Error connecting to backend");
+            } finally {
+                showLoader(false);
+            }
+        }
+
+        function showLoader(show, text = "") {
+            document.getElementById('loader').style.display = show ? 'flex' : 'none';
+            document.getElementById('loader-text').innerText = text;
+        }
+
+        function renderPortalList() {
+            const list = document.getElementById('portalList');
+            list.innerHTML = '';
+            currentPortals.forEach((p, idx) => {
+                const isVerified = verifiedServers.some(v => v.url === p.url && v.mac === p.mac);
+                const div = document.createElement('div');
+                div.className = `portal-item ${activePortal === idx ? 'active' : ''}`;
+                div.onclick = (e) => {
+                    if (e.target.classList.contains('btn-verify')) return;
+                    selectPortal(idx);
+                };
+                div.innerHTML = `
+                    <div class="portal-name">${p.url}</div>
+                    <div class="portal-stats">${p.mac} • ${p.channel_count} Channels</div>
+                    <button class="btn-verify ${isVerified ? 'is-verified' : ''}" onclick="verifyServer(${idx})" title="${isVerified ? 'Verified' : 'Verify Server'}">
+                        ${isVerified ? '<i class="fas fa-check"></i>' : 'Verify'}
+                    </button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        async function verifyServer(idx) {
+            const p = currentPortals[idx];
+            try {
+                const res = await fetch('/api/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: p.url, mac: p.mac })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    await fetchVerified();
+                    renderPortalList();
+                }
+            } catch (e) {
+                alert("Error verifying server");
+            }
+        }
+
+        async function showVerifiedModal() {
+            const modal = document.getElementById('verifiedModal');
+            const list = document.getElementById('verifiedList');
+            list.innerHTML = '<div style="text-align: center; padding: 20px;">Loading...</div>';
+            modal.style.display = 'flex';
+
+            try {
+                const res = await fetch('/api/verified');
+                const verified = await res.json();
+                list.innerHTML = '';
+                if (verified.length === 0) {
+                    list.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-dim);">No verified servers yet.</div>';
+                    return;
+                }
+                verified.forEach((v, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'verified-item';
+                    div.innerHTML = `
+                        <div class="verified-info">
+                            <div class="verified-url">${v.url}</div>
+                            <div class="verified-mac">${v.mac}</div>
+                        </div>
+                        <button class="btn-copy" onclick="copyToClipboard('${v.url}', '${v.mac}', this)" title="Copy Portal Detail">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    `;
+                    list.appendChild(div);
+                });
+            } catch (e) {
+                list.innerHTML = '<div style="text-align: center; padding: 20px; color: #ef4444;">Error loading verified servers.</div>';
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('verifiedModal').style.display = 'none';
+        }
+
+        function copyToClipboard(url, mac, btn) {
+            const text = `Portal: ${url}\nMAC: ${mac}`;
+            navigator.clipboard.writeText(text).then(() => {
+                const icon = btn.querySelector('i');
+                icon.className = 'fas fa-check';
+                btn.classList.add('copied');
+
+                setTimeout(() => {
+                    icon.className = 'fas fa-copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(err => {
+                console.error('Could not copy text: ', err);
+            });
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function (event) {
+            const modal = document.getElementById('verifiedModal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        function selectPortal(idx) {
+            activePortal = idx;
+            activeCategory = 'all'; // Reset category on portal change
+
+            document.getElementById('categoriesSidebar').style.display = 'flex';
+
+            renderPortalList();
+            renderCategories();
+            renderChannelsGrid();
+        }
+
+        function renderCategories() {
+            const list = document.getElementById('categoryList');
+            list.innerHTML = '';
+            const p = currentPortals[activePortal];
+
+            if (!p.categories || !Array.isArray(p.categories) || p.categories.length === 0) {
+                list.innerHTML = '<div style="padding: 15px; font-size: 0.8rem; color: var(--text-dim);">No categories found.</div>';
+                return;
+            }
+
+            // All channels option
+            const allDiv = document.createElement('div');
+            allDiv.className = `category-item ${activeCategory === 'all' ? 'active' : ''}`;
+            allDiv.innerText = `All Channels (${p.channels.length})`;
+            allDiv.onclick = () => selectCategory('all');
+            list.appendChild(allDiv);
+
+            p.categories.forEach(cat => {
+                const catId = cat.id || cat.value;
+                const catTitle = cat.title || cat.name || cat.label;
+
+                if (!catId || !catTitle) return;
+
+                const count = p.channels.filter(ch => String(ch.category_id) === String(catId)).length;
+                if (count === 0) return; // Skip empty categories
+
+                const div = document.createElement('div');
+                div.className = `category-item ${activeCategory == catId ? 'active' : ''}`;
+                div.innerText = `${catTitle} (${count})`;
+                div.onclick = () => selectCategory(catId);
+                list.appendChild(div);
+            });
+        }
+
+        function selectCategory(catId) {
+            activeCategory = catId;
+            renderCategories();
+
+            const grid = document.getElementById('channelsGrid');
+            grid.classList.add('loading');
+
+            setTimeout(() => {
+                renderChannelsGrid();
+                grid.classList.remove('loading');
+            }, 200);
+        }
+
+        const CHANNELS_PER_PAGE = 60;
+        let displayedCount = CHANNELS_PER_PAGE;
+
+        function renderChannelsGrid(loadMore = false) {
+            const grid = document.getElementById('channelsGrid');
+            const p = currentPortals[activePortal];
+
+            if (!loadMore) {
+                grid.innerHTML = '';
+                displayedCount = CHANNELS_PER_PAGE;
+            }
+
+            if (!p.channels || p.channels.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">No channels found.</div>';
+                return;
+            }
+
+            const filteredChannels = activeCategory === 'all'
+                ? p.channels
+                : p.channels.filter(ch => String(ch.category_id) === String(activeCategory));
+
+            const toDisplay = filteredChannels.slice(loadMore ? displayedCount - CHANNELS_PER_PAGE : 0, displayedCount);
+
+            toDisplay.forEach((ch, i) => {
+                const div = document.createElement('div');
+                div.className = 'channel-card';
+                div.onclick = () => playChannel(ch);
+                const logo = ch.logo && ch.logo !== 'null' ? ch.logo : 'https://cdn-icons-png.flaticon.com/512/3135/3135673.png';
+                div.innerHTML = `
+                    <img src="${logo}" class="channel-logo" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3135/3135673.png'">
+                    <div class="channel-name" title="${ch.name}">${ch.name}</div>
+                `;
+                grid.appendChild(div);
+            });
+
+            // Add "Load More" button if there are more channels
+            const existingBtn = document.getElementById('loadMoreBtn');
+            if (existingBtn) existingBtn.remove();
+
+            if (displayedCount < filteredChannels.length) {
+                const btn = document.createElement('button');
+                btn.id = 'loadMoreBtn';
+                btn.className = 'btn-check';
+                btn.style.gridColumn = '1 / -1';
+                btn.style.margin = '20px auto';
+                btn.style.width = '200px';
+                btn.innerText = `Load More (${filteredChannels.length - displayedCount} left)`;
+                btn.onclick = () => {
+                    displayedCount += CHANNELS_PER_PAGE;
+                    renderChannelsGrid(true);
+                };
+                grid.appendChild(btn);
+            }
+
+            if (filteredChannels.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">No channels in this category.</div>';
+            }
+        }
+
+        async function playChannel(ch) {
+            const p = currentPortals[activePortal];
+            document.getElementById('ch-name-display').innerText = ch.name + " (Loading...)";
+            document.getElementById('now-playing').style.display = 'block';
+
+            try {
+                const res = await fetch('/api/get_link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: p.url, mac: p.mac, cmd: ch.cmd })
+                });
+                const data = await res.json();
+                if (data.url) {
+                    // Make the proxy URL absolute for worker compatibility
+                    const absoluteUrl = window.location.origin + data.url;
+                    startPlayer(absoluteUrl, ch.name);
+                } else {
+                    alert("Could not get stream link");
+                }
+            } catch (e) {
+                console.error("Playback failed:", e);
+                alert("Playback error or Portal rejected the link");
+            }
+        }
+
+        function stopPlayers() {
+            if (hls) { hls.destroy(); hls = null; }
+            if (mpegPlayer) {
+                try {
+                    mpegPlayer.pause();
+                    mpegPlayer.unload();
+                    mpegPlayer.detachMediaElement();
+                    mpegPlayer.destroy();
+                } catch (e) { }
+                mpegPlayer = null;
+            }
+            const video = document.getElementById('video');
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+        }
+
+        function startPlayer(url, name) {
+            const video = document.getElementById('video');
+            stopPlayers();
+
+            document.getElementById('ch-name-display').innerText = name + " (Initializing...)";
+
+            if (url.includes('.m3u8')) {
+                if (Hls.isSupported()) {
+                    hls = new Hls({
+                        xhrSetup: (xhr) => { xhr.withCredentials = false; },
+                        backBufferLength: 60
+                    });
+                    hls.loadSource(url);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        video.play().catch(e => console.log("HLS play promise interrupted", e));
+                        document.getElementById('ch-name-display').innerText = name;
+                    });
+                    hls.on(Hls.Events.ERROR, (event, data) => {
+                        if (data.fatal) {
+                            document.getElementById('ch-name-display').innerText = name + " (HLS Connection Failed)";
+                        }
+                    });
+                } else {
+                    video.src = url;
+                    video.play();
+                }
+            } else {
+                // MPEG-TS via mpegts.js
+                if (mpegts.getFeatureList().mseLivePlayback) {
+                    mpegPlayer = mpegts.createPlayer({
+                        type: 'mse',
+                        isLive: true,
+                        url: url
+                    }, {
+                        enableWorker: false, // Disabling worker fixes the "Failed to parse URL" error in many browsers
+                        lazyLoadMaxDuration: 3 * 60,
+                        seekType: 'range',
+                    });
+
+                    mpegPlayer.attachMediaElement(video);
+                    mpegPlayer.load();
+
+                    mpegPlayer.play().then(() => {
+                        document.getElementById('ch-name-display').innerText = name;
+                    }).catch(err => {
+                        console.error("MPEG-TS Playback failed:", err);
+                        document.getElementById('ch-name-display').innerText = name + " (Unsupported Format)";
+                    });
+
+                    mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
+                        console.error("MPEG Error:", type, detail, info);
+                        if (detail === 'NetworkError') {
+                            document.getElementById('ch-name-display').innerText = name + " (Network/Portal Error)";
+                        } else {
+                            document.getElementById('ch-name-display').innerText = name + " (Codec/Format Error)";
+                        }
+                    });
+                } else {
+                    // Raw fallback
+                    video.src = url;
+                    video.play().catch(e => {
+                        document.getElementById('ch-name-display').innerText = name + " (Browser Not Supported)";
+                    });
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

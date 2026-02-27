@@ -1,0 +1,7 @@
+__pycache__/
+*.log
+verified_servers.json
+check_result.json
+*.pyc
+venv/
+.env
