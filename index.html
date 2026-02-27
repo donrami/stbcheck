@@ -489,6 +489,50 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* Alert Modal Styles */
+        .alert-modal-content {
+            max-width: 400px;
+            text-align: center;
+            padding: 40px 30px;
+            border-radius: 24px;
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .alert-icon {
+            font-size: 3.5rem;
+            color: var(--accent);
+            margin-bottom: 20px;
+            filter: drop-shadow(0 0 15px var(--accent-glow));
+        }
+
+        .alert-message {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            color: var(--text-main);
+            font-weight: 500;
+        }
+
+        .btn-alert-ok {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 40px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.3s;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .btn-alert-ok:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.1);
+            box-shadow: 0 6px 16px var(--accent-glow);
+        }
     </style>
 </head>
 
@@ -541,11 +585,22 @@
         <div class="modal-content">
             <div class="modal-header">
                 <div class="modal-title">Verified Servers</div>
-                <button class="close-modal" onclick="closeModal()">&times;</button>
+                <button class="close-modal" onclick="closeModal('verifiedModal')">&times;</button>
             </div>
             <div class="verified-list" id="verifiedList">
                 <!-- Verified servers will appear here -->
             </div>
+        </div>
+    </div>
+
+    <!-- Stylized Alert Modal -->
+    <div class="modal-overlay" id="alertModal" style="display: none; z-index: 3000;">
+        <div class="alert-modal-content">
+            <div class="alert-icon">
+                <i class="fas fa-info-circle"></i>
+            </div>
+            <div class="alert-message" id="alertMessage">Message goes here</div>
+            <button class="btn-alert-ok" onclick="closeModal('alertModal')">GOT IT</button>
         </div>
     </div>
 
@@ -620,11 +675,11 @@
                 await fetchVerified();
                 renderPortalList();
                 if (currentPortals.length === 0) {
-                    alert("No active portals found in the provided list.");
+                    showAlert("No active portals found in the provided list.");
                 }
             } catch (e) {
                 console.error("Discovery failed:", e);
-                alert("Error connecting to backend or processing list");
+                showAlert("Error connecting to backend or processing list");
             } finally {
                 showLoader(false);
             }
@@ -671,7 +726,7 @@
                     renderPortalList();
                 }
             } catch (e) {
-                alert("Error verifying server");
+                showAlert("Error verifying server");
             }
         }
 
@@ -708,8 +763,8 @@
             }
         }
 
-        function closeModal() {
-            document.getElementById('verifiedModal').style.display = 'none';
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
         }
 
         function copyToClipboard(url, mac, btn) {
@@ -730,9 +785,8 @@
 
         // Close modal when clicking outside
         window.onclick = function (event) {
-            const modal = document.getElementById('verifiedModal');
-            if (event.target == modal) {
-                closeModal();
+            if (event.target.classList.contains('modal-overlay')) {
+                event.target.style.display = 'none';
             }
         }
 
@@ -872,11 +926,11 @@
                     document.getElementById('vlc-link').style.display = 'inline';
                     startPlayer(absoluteUrl, ch.name);
                 } else {
-                    alert("Could not get stream link");
+                    showAlert("Could not get stream link");
                 }
             } catch (e) {
                 console.error("Playback failed:", e);
-                alert("Playback error or Portal rejected the link");
+                showAlert("Playback error or Portal rejected the link");
             }
         }
 
