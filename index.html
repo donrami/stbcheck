@@ -993,13 +993,15 @@
                 // MPEG-TS via mpegts.js
                 if (mpegts.getFeatureList().mseLivePlayback) {
                     mpegPlayer = mpegts.createPlayer({
-                        type: 'mpegts', // Changed from 'mse' to 'mpegts' for better standard compatibility
+                        type: 'mpegts',
                         isLive: true,
                         url: url
                     }, {
                         enableWorker: false,
                         lazyLoadMaxDuration: 3 * 60,
                         seekType: 'range',
+                        enableStashBuffer: true,
+                        stashInitialSize: 128 * 1024,
                     });
 
                     mpegPlayer.attachMediaElement(video);
@@ -1009,17 +1011,22 @@
                         document.getElementById('ch-name-display').innerText = name;
                     }).catch(err => {
                         console.error("MPEG-TS Playback failed:", err);
-                        document.getElementById('ch-name-display').innerText = name + " (Playback Error: " + err.name + ")";
+                        // Fallback to direct src
+                        video.src = url;
+                        video.play().catch(e => {
+                            document.getElementById('ch-name-display').innerText = name + " (Playback Error: " + err.name + ")";
+                        });
                     });
 
                     mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
                         console.error("MPEG Error:", type, detail, info);
                         if (detail === 'NetworkError') {
                             document.getElementById('ch-name-display').innerText = name + " (Network/Portal Error)";
-                        } else if (info && info.msg && info.msg.includes('ac-3')) {
-                            document.getElementById('ch-name-display').innerText = name + " (AC-3 Audio Unsupported by Browser)";
                         } else {
-                            document.getElementById('ch-name-display').innerText = name + " (Codec/Format Error)";
+                            // On fatal MSE error, try direct src fallback
+                            console.log("Fatal player error, attempting direct fallback...");
+                            video.src = url;
+                            video.play().catch(e => { });
                         }
                     });
                 } else {
