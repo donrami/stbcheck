@@ -607,7 +607,7 @@
                 };
                 div.innerHTML = `
                     <div class="portal-name">${p.url}</div>
-                    <div class="portal-stats">${p.mac} • ${p.channel_count} Channels</div>
+                    <div class="portal-stats">${p.mac} • ${p.channel_count} Ch • Exp: ${p.expiry || 'N/A'}</div>
                     <button class="btn-verify ${isVerified ? 'is-verified' : ''}" onclick="verifyServer(${idx})" title="${isVerified ? 'Verified' : 'Verify Server'}">
                         ${isVerified ? '<i class="fas fa-check"></i>' : 'Verify'}
                     </button>
