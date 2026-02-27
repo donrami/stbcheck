@@ -5,3 +5,4 @@ check_result.json
 *.pyc
 venv/
 .env
+.vercel

@@ -8,6 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script defer src="/_vercel/insights/script.js"></script>
     <style>
         :root {
             --bg-dark: #0f172a;
@@ -523,7 +524,9 @@
     <div class="main-content">
         <div class="player-container">
             <video id="video" controls></video>
-            <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span></div>
+            <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span> <a id="vlc-link" href="#"
+                    style="color: #3b82f6; margin-left:10px; text-decoration:none; display:none;" target="_blank"><i
+                        class="fas fa-external-link-alt"></i> External Player</a></div>
         </div>
 
         <div class="channels-grid" id="channelsGrid">
@@ -824,6 +827,8 @@
                 if (data.url) {
                     // Make the proxy URL absolute for worker compatibility
                     const absoluteUrl = window.location.origin + data.url;
+                    document.getElementById('vlc-link').href = absoluteUrl;
+                    document.getElementById('vlc-link').style.display = 'inline';
                     startPlayer(absoluteUrl, ch.name);
                 } else {
                     alert("Could not get stream link");
@@ -905,6 +910,8 @@
                         console.error("MPEG Error:", type, detail, info);
                         if (detail === 'NetworkError') {
                             document.getElementById('ch-name-display').innerText = name + " (Network/Portal Error)";
+                        } else if (info && info.msg && info.msg.includes('ac-3')) {
+                            document.getElementById('ch-name-display').innerText = name + " (AC-3 Audio Unsupported by Browser)";
                         } else {
                             document.getElementById('ch-name-display').innerText = name + " (Codec/Format Error)";
                         }
