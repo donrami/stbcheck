@@ -14,11 +14,10 @@ import ipaddress
 from urllib.parse import urlparse
 
 # Configure Logging
-log_handler = RotatingFileHandler("app.log", maxBytes=1*1024*1024, backupCount=3)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[log_handler, logging.StreamHandler()]
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -433,8 +432,11 @@ async def verify_server(req: VerifyRequest):
         exists = any(v['url'] == req.url and v['mac'] == req.mac for v in verified)
         if not exists:
             verified.append({"url": req.url, "mac": req.mac})
-            with open(VERIFIED_FILE, "w") as f:
-                json.dump(verified, f, indent=4)
+            try:
+                with open(VERIFIED_FILE, "w") as f:
+                    json.dump(verified, f, indent=4)
+            except Exception as e:
+                logger.warning(f"Could not save verified servers to file (stateless environment?): {e}")
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error verifying server: {e}")
