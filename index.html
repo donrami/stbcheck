@@ -993,11 +993,11 @@
                 // MPEG-TS via mpegts.js
                 if (mpegts.getFeatureList().mseLivePlayback) {
                     mpegPlayer = mpegts.createPlayer({
-                        type: 'mse',
+                        type: 'mpegts', // Changed from 'mse' to 'mpegts' for better standard compatibility
                         isLive: true,
                         url: url
                     }, {
-                        enableWorker: false, // Disabling worker fixes the "Failed to parse URL" error in many browsers
+                        enableWorker: false,
                         lazyLoadMaxDuration: 3 * 60,
                         seekType: 'range',
                     });
@@ -1009,7 +1009,7 @@
                         document.getElementById('ch-name-display').innerText = name;
                     }).catch(err => {
                         console.error("MPEG-TS Playback failed:", err);
-                        document.getElementById('ch-name-display').innerText = name + " (Unsupported Format)";
+                        document.getElementById('ch-name-display').innerText = name + " (Playback Error: " + err.name + ")";
                     });
 
                     mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
