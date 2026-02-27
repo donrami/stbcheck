@@ -13,6 +13,7 @@ import gc
 import ipaddress
 from urllib.parse import urlparse
 import asyncio
+import os
 
 # Configure Logging
 logging.basicConfig(
@@ -432,12 +433,16 @@ def proxy_stream(target: str, mac: str, request: Request):
             logger.warning(f"Blocked unsafe SSRF attempt to: {real_url}")
             return Response(status_code=403)
             
+        # Try to derive host and referer from the target URL
+        parsed_target = urlparse(real_url)
         headers = {
             'X-User-Agent': 'model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c',
             'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
             'Cookie': f'mac={mac.upper()}',
             'Accept': '*/*',
             'Connection': 'keep-alive',
+            'Referer': f"{parsed_target.scheme}://{parsed_target.netloc}/",
+            'Host': parsed_target.netloc
         }
 
         client_range = request.headers.get('range')
@@ -455,7 +460,7 @@ def proxy_stream(target: str, mac: str, request: Request):
                         return
 
                     first_chunk = True
-                    for chunk in r.iter_content(chunk_size=64*1024): # 64KB chunks are often better for low latency
+                    for chunk in r.iter_content(chunk_size=64*1024):
                         if chunk:
                             if first_chunk:
                                 # Check for MPEG-TS sync byte (0x47)
@@ -472,15 +477,10 @@ def proxy_stream(target: str, mac: str, request: Request):
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
 
-        # Minimize overhead by using a fast HEAD check with specific timeout
+        # Instead of a separate HEAD (which can fail/be blocked), we retrieve content_type inside iterfile
+        # or just use a default and rely on modern browser sniffing since we removed nosniff.
         content_type = 'video/MP2T'
-        try:
-            with session_pool.head(real_url, headers=headers, timeout=3) as head:
-                if head.status_code < 400:
-                    content_type = head.headers.get('Content-Type', content_type)
-        except:
-            pass
-
+        
         return StreamingResponse(
             iterfile(), 
             media_type=content_type,
@@ -488,7 +488,7 @@ def proxy_stream(target: str, mac: str, request: Request):
                 "Accept-Ranges": "bytes",
                 "Access-Control-Allow-Origin": "*",
                 "Cache-Control": "no-cache",
-                "X-Proxy-Target": real_url[:100] # Increased for better visibility
+                "X-Proxy-Target": str(real_url)[:100]
             }
         )
     except Exception as e:
@@ -504,22 +504,29 @@ VERIFIED_FILE = "verified_servers.json"
 @app.post("/api/verify")
 async def verify_server(req: VerifyRequest):
     try:
-        verified = []
+        verified_data = []
         try:
-            with open(VERIFIED_FILE, "r") as f:
-                verified = json.load(f)
+            if os.path.exists(VERIFIED_FILE):
+                with open(VERIFIED_FILE, "r") as f:
+                    content = f.read()
+                    if content:
+                        verified_data = json.loads(content)
         except (FileNotFoundError, json.JSONDecodeError):
             pass
         
+        # verified_data should be a list of dicts
+        if not isinstance(verified_data, list):
+            verified_data = []
+
         # Check if already exists
-        exists = any(v['url'] == req.url and v['mac'] == req.mac for v in verified)
+        exists = any(isinstance(v, dict) and v.get('url') == req.url and v.get('mac') == req.mac for v in verified_data)
         if not exists:
-            verified.append({"url": req.url, "mac": req.mac})
+            verified_data.append({"url": req.url, "mac": req.mac})
             try:
                 with open(VERIFIED_FILE, "w") as f:
-                    json.dump(verified, f, indent=4)
+                    json.dump(verified_data, f, indent=4)
             except Exception as e:
-                logger.warning(f"Could not save verified servers to file (stateless environment?): {e}")
+                logger.warning(f"Could not save verified servers to file: {e}")
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error verifying server: {e}")
