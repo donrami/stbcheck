@@ -97,29 +97,12 @@
         .porta-list {
             margin-top: 20px;
             overflow-y: auto;
+            overflow-x: hidden;
             flex-grow: 1;
         }
 
 
-        .portal-item:hover {
-            border-color: var(--accent);
-            background: rgba(59, 130, 246, 0.1);
-        }
 
-        .portal-item.active {
-            border-color: var(--accent);
-            background: rgba(59, 130, 246, 0.2);
-        }
-
-        .portal-item.empty {
-            background: rgba(239, 68, 68, 0.1);
-            border-color: rgba(239, 68, 68, 0.2);
-        }
-
-        .portal-item.empty:hover {
-            background: rgba(239, 68, 68, 0.15);
-            border-color: rgba(239, 68, 68, 0.4);
-        }
 
         .portal-name {
             font-weight: 600;
@@ -138,44 +121,101 @@
         .portal-item {
             position: relative;
             background: var(--card-bg);
-            padding: 15px 70px 15px 15px;
+            padding: 12px 15px;
             border-radius: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
             cursor: pointer;
-            border: 1px solid transparent;
-            transition: 0.3s;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
         }
 
-        .btn-verify {
-            position: absolute;
-            right: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: #22c55e;
-            color: white;
-            border: none;
-            padding: 5px 8px;
-            border-radius: 8px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            cursor: pointer;
-            opacity: 0;
-            transition: 0.3s;
-            pointer-events: none;
-            min-width: 32px;
+        .portal-item:hover {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .portal-item.active {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.15);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+        }
+
+        .portal-content-main {
+            flex-grow: 1;
+            min-width: 0;
+        }
+
+        .portal-actions {
             display: flex;
-            align-items: center;
+            gap: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
             justify-content: center;
         }
 
-        .btn-verify.is-verified {
-            opacity: 0.3;
-            pointer-events: auto;
+        .btn-action,
+        .btn-verify {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-dim);
+            width: 32px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 0.75rem;
+            flex-shrink: 0;
         }
 
-        .portal-item:hover .btn-verify {
-            opacity: 1 !important;
-            pointer-events: auto;
+        .btn-action:hover,
+        .btn-verify:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .btn-action.copied {
+            background: #22c55e;
+            color: white;
+            border-color: #22c55e;
+        }
+
+        .btn-verify.is-verified {
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+            border-color: rgba(34, 197, 94, 0.3);
+            opacity: 1;
+        }
+
+        .btn-verify.is-verified:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .portal-item.empty {
+            background: rgba(239, 68, 68, 0.05);
+            border-color: rgba(239, 68, 68, 0.1);
+        }
+
+        .portal-item.empty .portal-name,
+        .portal-item.empty .portal-stats {
+            opacity: 0.5;
+        }
+
+        .portal-item.empty:hover {
+            background: rgba(239, 68, 68, 0.08);
+            border-color: rgba(239, 68, 68, 0.2);
         }
 
         /* Modal Styles */
@@ -338,6 +378,7 @@
             flex-direction: column;
             padding: 20px 10px;
             overflow-y: auto;
+            overflow-x: hidden;
             display: none;
             /* Hidden until portal selected */
         }
@@ -394,6 +435,32 @@
             padding: 20px;
             z-index: 10;
             backdrop-filter: blur(5px);
+        }
+
+        .close-overlay {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-dim);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: 0.3s;
+            font-size: 1.4rem;
+            z-index: 15;
+        }
+
+        .close-overlay:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: rotate(90deg);
         }
 
         .error-icon {
@@ -639,6 +706,8 @@
         <div class="player-container">
             <video id="video" controls></video>
             <div class="player-error-overlay" id="playerErrorOverlay">
+                <button class="close-overlay"
+                    onclick="document.getElementById('playerErrorOverlay').style.display='none'">&times;</button>
                 <div class="error-icon"><i class="fas fa-exclamation-triangle"></i></div>
                 <div class="error-title" id="playerErrorTitle">Playback Failed</div>
                 <div class="error-desc" id="playerErrorDesc">This stream format (likely HEVC/H.265) is not supported by
@@ -688,6 +757,92 @@
         let mpegPlayer = null;
         let verifiedServers = [];
 
+        // Simple IndexedDB wrapper for larger data (channels can exceed 5MB localStorage limit)
+        const dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open('STBCheckDB', 1);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                db.createObjectStore('state', { keyPath: 'id' });
+            };
+        });
+
+        async function dbSet(key, value) {
+            const db = await dbPromise;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('state', 'readwrite');
+                const store = tx.objectStore('state');
+                store.put({ id: key, value });
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function dbGet(key) {
+            const db = await dbPromise;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('state', 'readonly');
+                const store = tx.objectStore('state');
+                const request = store.get(key);
+                request.onsuccess = () => resolve(request.result ? request.result.value : null);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function saveState() {
+            try {
+                // Large data goes to IndexedDB
+                await dbSet('currentPortals', currentPortals);
+
+                // Small metadata can stay in localStorage
+                localStorage.setItem('stb_activePortal', JSON.stringify(activePortal));
+                localStorage.setItem('stb_activeCategory', JSON.stringify(activeCategory));
+                localStorage.setItem('stb_portalInput', document.getElementById('portalInput').value);
+            } catch (e) {
+                console.error("State save failed:", e);
+            }
+        }
+
+        async function loadState() {
+            try {
+                const savedInput = localStorage.getItem('stb_portalInput');
+                if (savedInput) document.getElementById('portalInput').value = savedInput;
+
+                const savedPortals = await dbGet('currentPortals');
+                if (savedPortals) {
+                    currentPortals = savedPortals;
+
+                    const savedActive = localStorage.getItem('stb_activePortal');
+                    const savedCategory = localStorage.getItem('stb_activeCategory');
+
+                    if (savedActive !== null && savedActive !== 'null') {
+                        activePortal = JSON.parse(savedActive);
+                        activeCategory = (savedCategory && savedCategory !== 'undefined') ? JSON.parse(savedCategory) : 'all';
+                    }
+
+                    renderPortalList();
+
+                    if (activePortal !== null && activePortal < currentPortals.length) {
+                        document.getElementById('categoriesSidebar').style.display = 'flex';
+                        renderCategories();
+                        renderChannelsGrid();
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to restore state:", e);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            await fetchVerified();
+            await loadState();
+
+            document.getElementById('portalInput').addEventListener('input', () => {
+                localStorage.setItem('stb_portalInput', document.getElementById('portalInput').value);
+            });
+        });
+
         function showAlert(msg) {
             document.getElementById('alertMessage').innerText = msg;
             document.getElementById('alertModal').style.display = 'flex';
@@ -695,10 +850,12 @@
 
         async function fetchVerified() {
             try {
-                const res = await fetch('/api/verified');
-                verifiedServers = await res.json();
+                // Now matching the IndexedDB pattern for consistency
+                const verified = await dbGet('verifiedServers');
+                verifiedServers = verified || [];
             } catch (e) {
                 console.error("Failed to fetch verified servers:", e);
+                verifiedServers = [];
             }
         }
 
@@ -721,6 +878,7 @@
             `;
             stopPlayers();
             document.getElementById('now-playing').style.display = 'none';
+            saveState();
 
             showLoader(true, "Identifying servers...");
             try {
@@ -768,6 +926,7 @@
 
                 currentPortals = results;
                 await fetchVerified();
+                saveState();
                 renderPortalList();
                 if (currentPortals.length === 0) {
                     showAlert("No active portals found in the provided list.");
@@ -794,15 +953,31 @@
                 const div = document.createElement('div');
                 div.className = `portal-item ${activePortal === idx ? 'active' : ''} ${isEmpty ? 'empty' : ''}`;
                 div.onclick = (e) => {
-                    if (e.target.classList.contains('btn-verify')) return;
+                    if (e.target.closest('.portal-actions')) return;
                     selectPortal(idx);
                 };
                 div.innerHTML = `
-                    <div class="portal-name">${p.url}</div>
-                    <div class="portal-stats">${p.mac} • ${p.channel_count} Ch • Exp: ${p.expiry || 'N/A'}</div>
-                    <button class="btn-verify ${isVerified ? 'is-verified' : ''}" onclick="verifyServer(${idx})" title="${isVerified ? 'Verified' : 'Verify Server'}">
-                        ${isVerified ? '<i class="fas fa-check"></i>' : 'Verify'}
-                    </button>
+                    <div class="portal-content-main">
+                        <div class="portal-name" title="${p.url}">${p.url}</div>
+                        <div class="portal-stats">
+                            <i class="fas fa-microchip" style="font-size: 0.7rem; opacity: 0.6;"></i> ${p.mac} <br>
+                            <i class="fas fa-tv" style="font-size: 0.7rem; opacity: 0.6;"></i> ${p.channel_count} Ch • 
+                            <i class="fas fa-calendar-alt" style="font-size: 0.7rem; opacity: 0.6;"></i> ${p.expiry || 'N/A'}
+                        </div>
+                    </div>
+                    ${!isEmpty ? `
+                    <div class="portal-actions">
+                        <button class="btn-action" onclick="copyIndividualValue('${p.url}', this)" title="Copy URL">
+                            <i class="fas fa-link"></i>
+                        </button>
+                        <button class="btn-action" onclick="copyIndividualValue('${p.mac}', this)" title="Copy MAC Address">
+                            <i class="fas fa-microchip"></i>
+                        </button>
+                        <button class="btn-verify ${isVerified ? 'is-verified' : ''}" onclick="verifyServer(${idx})" title="${isVerified ? 'Unmark as verified' : 'Mark as verified'}">
+                            <i class="fas ${isVerified ? 'fa-check-double' : 'fa-check'}"></i>
+                        </button>
+                    </div>
+                    ` : ''}
                 `;
                 list.appendChild(div);
             });
@@ -811,52 +986,46 @@
         async function verifyServer(idx) {
             const p = currentPortals[idx];
             try {
-                const res = await fetch('/api/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: p.url, mac: p.mac })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    await fetchVerified();
-                    renderPortalList();
+                const existingIdx = verifiedServers.findIndex(v => v.url === p.url && v.mac === p.mac);
+
+                if (existingIdx !== -1) {
+                    verifiedServers.splice(existingIdx, 1);
+                } else {
+                    verifiedServers.push({ url: p.url, mac: p.mac });
                 }
+
+                await dbSet('verifiedServers', verifiedServers);
+                renderPortalList();
             } catch (e) {
-                showAlert("Error verifying server");
+                showAlert("Error updating verified list");
             }
         }
 
         async function showVerifiedModal() {
             const modal = document.getElementById('verifiedModal');
             const list = document.getElementById('verifiedList');
-            list.innerHTML = '<div style="text-align: center; padding: 20px;">Loading...</div>';
             modal.style.display = 'flex';
+            list.innerHTML = '';
 
-            try {
-                const res = await fetch('/api/verified');
-                const verified = await res.json();
-                list.innerHTML = '';
-                if (verified.length === 0) {
-                    list.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-dim);">No verified servers yet.</div>';
-                    return;
-                }
-                verified.forEach((v, idx) => {
-                    const div = document.createElement('div');
-                    div.className = 'verified-item';
-                    div.innerHTML = `
-                        <div class="verified-info">
-                            <div class="verified-url">${v.url}</div>
-                            <div class="verified-mac">${v.mac}</div>
-                        </div>
-                        <button class="btn-copy" onclick="copyToClipboard('${v.url}', '${v.mac}', this)" title="Copy Portal Detail">
-                            <i class="fas fa-copy"></i>
-                        </button>
-                    `;
-                    list.appendChild(div);
-                });
-            } catch (e) {
-                list.innerHTML = '<div style="text-align: center; padding: 20px; color: #ef4444;">Error loading verified servers.</div>';
+            if (verifiedServers.length === 0) {
+                list.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-dim);">No verified servers yet.</div>';
+                return;
             }
+
+            verifiedServers.forEach((v, idx) => {
+                const div = document.createElement('div');
+                div.className = 'verified-item';
+                div.innerHTML = `
+                    <div class="verified-info">
+                        <div class="verified-url">${v.url}</div>
+                        <div class="verified-mac">${v.mac}</div>
+                    </div>
+                    <button class="btn-copy" onclick="copyToClipboard('${v.url}', '${v.mac}', this)" title="Copy Portal Detail">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                `;
+                list.appendChild(div);
+            });
         }
 
         function closeModal(modalId) {
@@ -865,13 +1034,18 @@
 
         function copyToClipboard(url, mac, btn) {
             const text = `Portal: ${url}\nMAC: ${mac}`;
+            copyIndividualValue(text, btn);
+        }
+
+        function copyIndividualValue(text, btn) {
             navigator.clipboard.writeText(text).then(() => {
                 const icon = btn.querySelector('i');
+                const oldClass = icon.className;
                 icon.className = 'fas fa-check';
                 btn.classList.add('copied');
 
                 setTimeout(() => {
-                    icon.className = 'fas fa-copy';
+                    icon.className = oldClass;
                     btn.classList.remove('copied');
                 }, 2000);
             }).catch(err => {
@@ -892,6 +1066,7 @@
 
             document.getElementById('categoriesSidebar').style.display = 'flex';
 
+            saveState();
             renderPortalList();
             renderCategories();
             renderChannelsGrid();
@@ -933,6 +1108,7 @@
 
         function selectCategory(catId) {
             activeCategory = catId;
+            saveState();
             renderCategories();
 
             const grid = document.getElementById('channelsGrid');

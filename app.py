@@ -157,20 +157,60 @@ class StalkerPortal:
         return self._request({'type': 'stb', 'action': 'get_profile', 'stb_type': 'MAG250', 'sn': '1234567890123'})
 
     def get_account_info(self):
-        return self._request({'type': 'stb', 'action': 'get_account_info'})
+        res = self._request({'type': 'stb', 'action': 'get_account_info'})
+        if not res or res == 404:
+            res = self._request({'type': 'stb', 'action': 'get_main_info'})
+        return res
 
-def detect_expiry(data):
-    if not isinstance(data, dict):
+def detect_expiry(data, depth=0):
+    if not isinstance(data, dict) or depth > 4:
         return None
-    keys = [
+    
+    # Priority keys for expiry dates
+    primary_keys = [
         'expire_date', 'end_date', 'max_view_date', 
         'expire_billing_date', 'tariff_expired_date',
-        'date_end', 'exp_date'
+        'date_end', 'exp_date', 'expDate', 'expired', 'expires',
+        'expiry_date', 'access_end', 'end_date_time', 'valid_until',
+        'end', 'to', 'active_until'
     ]
-    for key in keys:
+    
+    # 1. Check primary keys
+    for key in primary_keys:
         val = data.get(key)
-        if val and str(val).strip() not in ["", "0000-00-00", "0000-00-00 00:00:00", "null", "None"]:
-            return str(val)
+        if val is not None:
+            val_str = str(val).strip().lower()
+            if val_str not in ["", "0", "0000-00-00", "0000-00-00 00:00:00", "null", "none", "false", "unlimited"]:
+                return str(val)
+    
+    # 2. Aggressive search: Check ANY key that contains date/expire/end keywords
+    for k, v in data.items():
+        if v is None: continue
+        k_low = str(k).lower()
+        v_str = str(v).strip()
+        if not v_str: continue
+        
+        # If key suggests a date/expiry and value isn't a known "empty" placeholder
+        if any(x in k_low for x in ['expire', 'end_date', 'valid_until', 'exp_date', 'access_end']):
+            if v_str.lower() not in ["0", "0000-00-00", "0000-00-00 00:00:00", "null", "none", "false"]:
+                # If it looks like a date (YYYY-MM-DD) or is a timestamp
+                if '-' in v_str or (v_str.isdigit() and len(v_str) >= 10):
+                    return v_str
+
+    # 3. Check common sub-objects (recursive)
+    for sub in ['account_info', 'stb_account', 'active_sub', 'billing', 'profile', 'payment', 'tariff', 'subscription', 'services']:
+        sub_data = data.get(sub)
+        if isinstance(sub_data, dict):
+            res = detect_expiry(sub_data, depth + 1)
+            if res:
+                return res
+        elif isinstance(sub_data, list) and len(sub_data) > 0:
+            for item in sub_data:
+                if isinstance(item, dict):
+                    res = detect_expiry(item, depth + 1)
+                    if res:
+                        return res
+                
     return None
 
 class CheckRequest(BaseModel):
@@ -222,6 +262,13 @@ def process_single_portal(url, mac):
         if portal.handshake():
             profile = portal.get_profile()
             acc_info = portal.get_account_info()
+            
+            # Debug logging to see what we're actually getting
+            # We don't log the full object to avoid flooding logs, just keys and existence
+            p_keys = list(profile.keys()) if isinstance(profile, dict) else "Not a dict"
+            a_keys = list(acc_info.keys()) if isinstance(acc_info, dict) else "Not a dict"
+            logger.info(f"Portal data for {url}: Profile keys={p_keys}, AccInfo keys={a_keys}")
+
             expiry = detect_expiry(profile) or detect_expiry(acc_info) or "Unlimited"
             
             itv_info = portal.get_itv_info()
@@ -564,51 +611,6 @@ def proxy_stream(target: str, mac: str, request: Request, origin: Optional[str] 
 @app.get("/favicon.ico")
 async def favicon():
     return Response(status_code=204)
-
-VERIFIED_FILE = "verified_servers.json"
-
-@app.post("/api/verify")
-async def verify_server(req: VerifyRequest):
-    try:
-        verified_data = []
-        try:
-            if os.path.exists(VERIFIED_FILE):
-                with open(VERIFIED_FILE, "r") as f:
-                    content = f.read()
-                    if content:
-                        verified_data = json.loads(content)
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
-        
-        # verified_data should be a list of dicts
-        if not isinstance(verified_data, list):
-            verified_data = []
-
-        # Check if already exists
-        exists = any(isinstance(v, dict) and v.get('url') == req.url and v.get('mac') == req.mac for v in verified_data)
-        if not exists:
-            verified_data.append({"url": req.url, "mac": req.mac})
-            try:
-                with open(VERIFIED_FILE, "w") as f:
-                    json.dump(verified_data, f, indent=4)
-            except Exception as e:
-                logger.warning(f"Could not save verified servers to file: {e}")
-        return {"status": "success"}
-    except Exception as e:
-        logger.error(f"Error verifying server: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/verified")
-async def get_verified():
-    try:
-        try:
-            with open(VERIFIED_FILE, "r") as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []
-    except Exception as e:
-        logger.error(f"Error getting verified servers: {e}")
-        return []
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():

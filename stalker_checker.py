@@ -125,20 +125,55 @@ def parse_bulk_input(text):
         
     return pairs
 
-def detect_expiry(data):
-    if not isinstance(data, dict):
+def detect_expiry(data, depth=0):
+    if not isinstance(data, dict) or depth > 4:
         return None
-        
-    keys = [
+    
+    # Priority keys for expiry dates
+    primary_keys = [
         'expire_date', 'end_date', 'max_view_date', 
         'expire_billing_date', 'tariff_expired_date',
-        'date_end', 'exp_date'
+        'date_end', 'exp_date', 'expDate', 'expired', 'expires',
+        'expiry_date', 'access_end', 'end_date_time', 'valid_until',
+        'end', 'to', 'active_until'
     ]
     
-    for key in keys:
+    # 1. Check primary keys
+    for key in primary_keys:
         val = data.get(key)
-        if val and str(val).strip() not in ["", "0000-00-00", "0000-00-00 00:00:00", "null", "None"]:
-            return str(val)
+        if val is not None:
+            val_str = str(val).strip().lower()
+            if val_str not in ["", "0", "0000-00-00", "0000-00-00 00:00:00", "null", "none", "false", "unlimited"]:
+                return str(val)
+    
+    # 2. Aggressive search: Check ANY key that contains date/expire/end keywords
+    for k, v in data.items():
+        if v is None: continue
+        k_low = str(k).lower()
+        v_str = str(v).strip()
+        if not v_str: continue
+        
+        # If key suggests a date/expiry and value isn't a known "empty" placeholder
+        if any(x in k_low for x in ['expire', 'end_date', 'valid_until', 'exp_date', 'access_end']):
+            if v_str.lower() not in ["0", "0000-00-00", "0000-00-00 00:00:00", "null", "none", "false"]:
+                # If it looks like a date (YYYY-MM-DD) or is a timestamp
+                if '-' in v_str or (v_str.isdigit() and len(v_str) >= 10):
+                    return v_str
+
+    # 3. Check common sub-objects (recursive)
+    for sub in ['account_info', 'stb_account', 'active_sub', 'billing', 'profile', 'payment', 'tariff', 'subscription', 'services']:
+        sub_data = data.get(sub)
+        if isinstance(sub_data, dict):
+            res = detect_expiry(sub_data, depth + 1)
+            if res:
+                return res
+        elif isinstance(sub_data, list) and len(sub_data) > 0:
+            for item in sub_data:
+                if isinstance(item, dict):
+                    res = detect_expiry(item, depth + 1)
+                    if res:
+                        return res
+                
     return None
 
 def main():
