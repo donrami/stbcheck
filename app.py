@@ -28,14 +28,22 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(log_formatter)
 logger.addHandler(stream_handler)
 
-# File handler for debugging (only if not on Vercel)
+# Version tracking for Vercel deployments
+APP_VERSION = "1.0.1 - Playback Fixes"
+print(f"Starting STBCheck App - Version: {APP_VERSION}")
+
+# File handler for debugging (only if not on Vercel and directory is writable)
 if not os.environ.get("VERCEL"):
     try:
-        file_handler = RotatingFileHandler("app.log", maxBytes=5*1024*1024, backupCount=2)
-        file_handler.setFormatter(log_formatter)
-        logger.addHandler(file_handler)
-    except Exception as e:
-        print(f"Could not initialize file logging: {e}")
+        # Check if the current directory is writable before attempting to create the log
+        if os.access(os.getcwd(), os.W_OK):
+            file_handler = RotatingFileHandler("app.log", maxBytes=5*1024*1024, backupCount=2)
+            file_handler.setFormatter(log_formatter)
+            logger.addHandler(file_handler)
+            logger.info("File logging initialized successfully.")
+    except (OSError, Exception) as e:
+        # Fallback to console only if file logging is impossible
+        print(f"Notice: File logging disabled (likely read-only environment or permission issue): {e}")
 
 # Global Session Pool for better resource management
 session_pool = requests.Session()
