@@ -1023,10 +1023,22 @@
                         if (detail === 'NetworkError') {
                             document.getElementById('ch-name-display').innerText = name + " (Network/Portal Error)";
                         } else {
-                            // On fatal MSE error, try direct src fallback
-                            console.log("Fatal player error, attempting direct fallback...");
-                            video.src = url;
-                            video.play().catch(e => { });
+                            // Detect HEVC in error info if possible
+                            const isHEVC = (info && info.msg && info.msg.toLowerCase().includes('hevc')) ||
+                                (info && info.msg && info.msg.toLowerCase().includes('hvc1'));
+
+                            if (isHEVC) {
+                                document.getElementById('ch-name-display').innerText = name + " (HEVC/H.265 Codec Not Supported)";
+                                showAlert("HEVC (H.265) video detected. Your browser does not support this format. Please use the External Player link.");
+                            } else {
+                                console.log("Fatal player error, attempting direct fallback...");
+                                video.src = url;
+                                video.play().catch(e => {
+                                    document.getElementById('ch-name-display').innerText = name + " (Format Not Supported)";
+                                    document.getElementById('vlc-link').style.fontWeight = 'bold';
+                                    document.getElementById('vlc-link').style.fontSize = '1.1rem';
+                                });
+                            }
                         }
                     });
                 } else {

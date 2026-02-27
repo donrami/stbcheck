@@ -426,7 +426,8 @@ async def get_link(req: StreamRequest):
 @app.get("/api/proxy_stream")
 def proxy_stream(target: str, mac: str, request: Request):
     try:
-        real_url = base64.b64decode(target).decode()
+        decoded_bytes = base64.b64decode(target)
+        real_url = decoded_bytes.decode('utf-8', errors='ignore')
         if not is_safe_url(real_url):
             logger.warning(f"Blocked unsafe SSRF attempt to: {real_url}")
             return Response(status_code=403)
@@ -448,6 +449,7 @@ def proxy_stream(target: str, mac: str, request: Request):
             try:
                 # Setting stream=True is critical for memory
                 with session_pool.get(real_url, headers=headers, stream=True, timeout=15) as r:
+                    logger.info(f"Portal response for stream: {r.status_code} - Content-Type: {r.headers.get('Content-Type')}")
                     if r.status_code >= 400:
                         logger.error(f"Portal returned error {r.status_code} for {real_url}")
                         return
