@@ -1020,26 +1020,29 @@
 
                     mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
                         console.error("MPEG Error:", type, detail, info);
+
+                        let errorMsg = "Playback Error";
                         if (detail === 'NetworkError') {
-                            document.getElementById('ch-name-display').innerText = name + " (Network/Portal Error)";
+                            errorMsg = "Network/Portal Error";
                         } else {
                             // Detect HEVC in error info if possible
-                            const isHEVC = (info && info.msg && info.msg.toLowerCase().includes('hevc')) ||
-                                (info && info.msg && info.msg.toLowerCase().includes('hvc1'));
+                            const isHEVC = (info && info.msg && (info.msg.toLowerCase().includes('hevc') || info.msg.toLowerCase().includes('hvc1'))) ||
+                                (info && info.decoded_mime && info.decoded_mime.includes('hvc1'));
 
                             if (isHEVC) {
-                                document.getElementById('ch-name-display').innerText = name + " (HEVC/H.265 Codec Not Supported)";
-                                showAlert("HEVC (H.265) video detected. Your browser does not support this format. Please use the External Player link.");
+                                errorMsg = "HEVC/H.265 Not Supported";
+                                showAlert("HEVC (H.265) video detected. Your browser does not support this format natively. Please use the External Player link.");
                             } else {
                                 console.log("Fatal player error, attempting direct fallback...");
                                 video.src = url;
                                 video.play().catch(e => {
                                     document.getElementById('ch-name-display').innerText = name + " (Format Not Supported)";
-                                    document.getElementById('vlc-link').style.fontWeight = 'bold';
-                                    document.getElementById('vlc-link').style.fontSize = '1.1rem';
+                                    document.getElementById('vlc-link').style.cssText = "color: #fbbf24; font-weight: bold; font-size: 1.1rem; animation: pulse 2s infinite;";
                                 });
                             }
                         }
+
+                        document.getElementById('ch-name-display').innerText = name + " (" + errorMsg + ")";
                     });
                 } else {
                     // Raw fallback
