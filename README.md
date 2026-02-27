@@ -6,12 +6,10 @@ A simple and elegant Stalker Portal checker and player. STBcheck allows you to a
 
 ## Features
 
-- **Portal Handshake**: Authenticates with Stalker portals using MAC addresses.
+- **Bulk Portal Handshake**: Authenticates with Stalker portals using lists of URLs and MAC addresses.
 - **Channel Discovery**: Automatically fetches and categorizes channels from various portals.
 - **Manual Verification**: Verify portals manually and keep a list of working servers.
 - **Stream Proxy**: Proxies streams to bypass CORS and handle custom headers required by portals.
-- **Modern UI**: A sleek, dark-themed responsive interface built with modern CSS and JavaScript.
-- **Security Focused**: Includes SSRF protection and safe URL handling for proxying.
 
 ## Quick Start
 
