@@ -1,6 +1,6 @@
 # STBcheck
 
-A powerful and elegant Stalker Portal checker and player. **STBcheck** allows you to analyze Stalker portals, discover channels, and stream content directly in your browser or through a proxy.
+A simple and elegant Stalker Portal checker and player. STBcheck allows you to analyze Stalker portals, discover channels, and stream content directly in your browser or through a proxy.
 
 <img width="1916" height="1042" alt="image" src="https://github.com/user-attachments/assets/741ca7a7-f70f-400c-9d61-6f0021dcc645" />
 
@@ -41,13 +41,6 @@ A powerful and elegant Stalker Portal checker and player. **STBcheck** allows yo
    ```
 
 4. Open your browser and navigate to `http://localhost:8000`.
-
-## Security
-
-STBcheck includes built-in security measures to protect the host:
-- **SSRF Protection**: Validates and restricts proxied URLs to prevent Server-Side Request Forgery.
-- **Safe Protocol Handling**: Only allows `http` and `https` schemes for external requests.
-- **Private Network Blocking**: Automatically blocks requests to localhost and private IP ranges.
 
 ## License
 
