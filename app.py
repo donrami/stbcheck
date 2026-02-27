@@ -174,11 +174,11 @@ def clean_stalker_url(raw_url):
 @app.post("/api/check")
 async def check_portals(req: CheckRequest):
     logger.info(f"Checking portals for input of length {len(req.text)}")
-    url_pattern = r'(?:PORTAL|Panel|Server)\s*[:➤]\s*(https?://\S+)'
-    mac_pattern = r'(?:MAC|Mac)\s*[:➤]\s*([0-9A-Fa-f:]{17})'
+    url_pattern = r'(?:PORTAL|Panel|Server)\s*[:➤\-]\s*(https?://\S+)'
+    mac_pattern = r'(?:MAC|Mac)\s*[:➤\-]\s*([0-9A-Fa-f:]{17})'
     
     pairs = []
-    blocks = re.split(r'\n\s*\n|╭─•|╰─•|🛰|📍|🌍|✅|📆', req.text)
+    blocks = re.split(r'\n\s*\n|╭─•|╰─•|🛰|📍|🌍|✅|📆|📡', req.text)
     for block in blocks:
         u_match = re.search(url_pattern, block, re.IGNORECASE)
         m_match = re.search(mac_pattern, block, re.IGNORECASE)
