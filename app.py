@@ -12,6 +12,7 @@ import uvicorn
 import gc
 import ipaddress
 from urllib.parse import urlparse
+import asyncio
 
 # Configure Logging
 logging.basicConfig(
@@ -191,160 +192,181 @@ def clean_stalker_url(raw_url):
     u = re.sub(r'^(ffmpeg|ffrt|solution)\s+', '', u)
     return u
 
+def process_single_portal(url, mac):
+    try:
+        logger.info(f"Analyzing portal: {url} ({mac})")
+        portal = StalkerPortal(url, mac)
+        if portal.handshake():
+            profile = portal.get_profile()
+            acc_info = portal.get_account_info()
+            expiry = detect_expiry(profile) or detect_expiry(acc_info) or "Unlimited"
+            
+            itv_info = portal.get_itv_info()
+            
+            channels_raw = None
+            if isinstance(itv_info, dict):
+                channels_raw = itv_info.get('channels') or itv_info.get('data') or itv_info.get('itv_items')
+            
+            if not channels_raw:
+                channels_raw = portal.get_channels()
+            
+            all_channels = []
+            if isinstance(channels_raw, dict) and 'data' in channels_raw:
+                all_channels = channels_raw['data']
+            elif isinstance(channels_raw, list):
+                all_channels = channels_raw
+            
+            # Aggregate categories
+            genres_raw = portal.get_genres()
+            if not genres_raw: genres_raw = portal.get_itv_groups()
+            if not genres_raw: genres_raw = portal.get_short_genres()
+            if not genres_raw: genres_raw = portal.get_all_itv_groups()
+            if not genres_raw: genres_raw = portal.get_categories()
+            
+            if isinstance(itv_info, dict) and not genres_raw:
+                genres_raw = itv_info.get('genres') or itv_info.get('groups') or itv_info.get('itv_groups')
+            
+            categories = []
+            if isinstance(genres_raw, dict) and 'data' in genres_raw:
+                categories = genres_raw['data']
+            elif isinstance(genres_raw, list):
+                categories = genres_raw
+            
+            cat_map = {}
+            for c in categories:
+                if isinstance(c, dict):
+                    cid = str(c.get('id', ''))
+                    ctitle = str(c.get('title') or c.get('name') or c.get('label') or cid)
+                    if cid: cat_map[cid] = ctitle
+            
+            processed_channels = []
+            for c in all_channels:
+                if not isinstance(c, dict): continue
+                
+                name = str(c.get('name', ''))
+                logo = str(c.get('logo', ''))
+                if logo and logo not in ['None', 'null', '']:
+                    logo = re.sub(r'^s:\d+:', '', logo)
+                    if logo.startswith('/'): logo = url.rstrip('/') + logo
+                    elif not logo.startswith('http'): logo = url.rstrip('/') + '/' + logo
+                    logo = f"/api/proxy_logo?target={base64.b64encode(logo.encode()).decode()}"
+                else:
+                    logo = None
+
+                cat_id = "uncategorized"
+                for key in ['tv_genre_id', 'category_id', 'genre_id', 'group_id', 'genre', 'itv_group_id']:
+                    val = c.get(key)
+                    if val is not None and str(val) != '':
+                        cat_id = str(val)
+                        break
+                
+                cat_name = None
+                for key in ['category_name', 'genre_name', 'group_name', 'genre_title']:
+                    val = c.get(key)
+                    if val is not None and str(val) != '':
+                        cat_name = str(val)
+                        break
+
+                if cat_id != "uncategorized" and cat_name:
+                    cid_str = str(cat_id)
+                    cname_str = str(cat_name)
+                    if cid_str not in cat_map:
+                        cat_map[cid_str] = cname_str
+                        categories.append({"id": cid_str, "title": cname_str})
+
+                processed_channels.append({
+                    "id": c.get('id'), 
+                    "name": name, 
+                    "cmd": c.get('cmd'), 
+                    "logo": logo,
+                    "category_id": cat_id
+                })
+            
+            # Sync categories found in channels
+            unique_ids = {ch['category_id'] for ch in processed_channels}
+            for cid in unique_ids:
+                if cid not in cat_map:
+                    c_name = "Uncategorized" if cid == "uncategorized" else f"Group {cid}"
+                    categories.append({"id": cid, "title": c_name})
+                    cat_map[cid] = c_name
+
+            # Filter and unique
+            unique_categories = []
+            seen_cat_ids = set()
+            for cat in categories:
+                cid = str(cat.get('id', ''))
+                if cid and cid not in seen_cat_ids:
+                    seen_cat_ids.add(cid)
+                    unique_categories.append({"id": cid, "title": str(cat.get('title') or cat.get('name', ''))})
+            
+            logger.info(f"   -> Found {len(processed_channels)} channels and {len(unique_categories)} categories for {url}")
+            return {
+                "url": url,
+                "mac": mac,
+                "channel_count": len(processed_channels),
+                "categories": unique_categories,
+                "channels": processed_channels,
+                "expiry": expiry
+            }
+    except Exception as e:
+        logger.error(f"Error processing portal {url}: {e}")
+    return None
+
 @app.post("/api/check")
 async def check_portals(req: CheckRequest):
     logger.info(f"Checking portals for input of length {len(req.text)}")
-    pairs = []
-    # Improved patterns and block splitting
+    
     url_pattern = r'(?:PORTAL|Panel|Server)\s*[:➤\-]\s*(https?://\S+)'
     mac_pattern = r'(?:MAC|Mac)\s*[:➤\-]\s*([0-9A-Fa-f:]{17})'
     
-    blocks = re.split(r'\n\s*\n|╭─•|├─•|╰─•|🛰|📍|🌍|✅|📆|📡', req.text)
-    for block in blocks:
-        u_match = re.search(url_pattern, block, re.IGNORECASE)
-        m_match = re.search(mac_pattern, block, re.IGNORECASE)
-        if u_match and m_match:
-            pairs.append((u_match.group(1).rstrip('/'), m_match.group(1).upper()))
+    pairs = []
+    
+    url_matches = list(re.finditer(url_pattern, req.text, re.IGNORECASE))
+    mac_matches = list(re.finditer(mac_pattern, req.text, re.IGNORECASE))
+    
+    if url_matches and mac_matches:
+        for u_idx, u_match in enumerate(url_matches):
+            u_start = u_match.start()
+            url = u_match.group(1).rstrip('/')
+            block_start = u_start
+            block_end = url_matches[u_idx + 1].start() if u_idx + 1 < len(url_matches) else len(req.text)
+            look_back = 200
+            
+            found_for_this_url = False
+            for m_match in mac_matches:
+                m_start = m_match.start()
+                if (m_start >= block_start and m_start < block_end) or (m_start < block_start and m_start >= max(0, block_start - look_back)):
+                    mac = m_match.group(1).upper()
+                    pairs.append((url, mac))
+                    found_for_this_url = True
+            
+            if not found_for_this_url:
+                best_mac = None
+                min_dist = 500
+                for m_match in mac_matches:
+                    dist = abs(m_match.start() - u_start)
+                    if dist < min_dist:
+                        best_mac = m_match.group(1).upper()
+                        min_dist = dist
+                if best_mac:
+                    pairs.append((url, best_mac))
     
     if not pairs:
-        urls = re.findall(url_pattern, req.text, re.IGNORECASE)
-        macs = re.findall(mac_pattern, req.text, re.IGNORECASE)
-        pairs = list(zip([u.rstrip('/') for u in urls], macs))
+        urls = [m.group(1).rstrip('/') for m in url_matches]
+        macs = [m.group(1).upper() for m in mac_matches]
+        pairs = list(zip(urls, macs))
     
-    # Remove duplicates
     pairs = list(dict.fromkeys(pairs))
+    
+    if not pairs:
+        return []
 
-    results = []
-
-    try:
-        for url, mac in pairs:
-            logger.info(f"Analyzing portal: {url} ({mac})")
-            portal = StalkerPortal(url, mac)
-            if portal.handshake():
-                profile = portal.get_profile()
-                acc_info = portal.get_account_info()
-                expiry = detect_expiry(profile) or detect_expiry(acc_info) or "Unlimited"
-                
-                itv_info = portal.get_itv_info()
-                
-                channels_raw = None
-                if isinstance(itv_info, dict):
-                    channels_raw = itv_info.get('channels') or itv_info.get('data') or itv_info.get('itv_items')
-                
-                if not channels_raw:
-                    channels_raw = portal.get_channels()
-                
-                all_channels = []
-                if isinstance(channels_raw, dict) and 'data' in channels_raw:
-                    all_channels = channels_raw['data']
-                elif isinstance(channels_raw, list):
-                    all_channels = channels_raw
-                
-                # Cleanup raw data immediately
-                del channels_raw
-                
-                # Aggregate categories
-                genres_raw = portal.get_genres()
-                if not genres_raw: genres_raw = portal.get_itv_groups()
-                if not genres_raw: genres_raw = portal.get_short_genres()
-                if not genres_raw: genres_raw = portal.get_all_itv_groups()
-                if not genres_raw: genres_raw = portal.get_categories()
-                
-                if isinstance(itv_info, dict) and not genres_raw:
-                    genres_raw = itv_info.get('genres') or itv_info.get('groups') or itv_info.get('itv_groups')
-                
-                categories = []
-                if isinstance(genres_raw, dict) and 'data' in genres_raw:
-                    categories = genres_raw['data']
-                elif isinstance(genres_raw, list):
-                    categories = genres_raw
-                
-                del genres_raw
-                del itv_info
-                
-                cat_map = {}
-                for c in categories:
-                    if isinstance(c, dict):
-                        cid = str(c.get('id', ''))
-                        ctitle = str(c.get('title') or c.get('name') or c.get('label') or cid)
-                        if cid: cat_map[cid] = ctitle
-                
-                processed_channels = []
-                for c in all_channels:
-                    if not isinstance(c, dict): continue
-                    
-                    name = str(c.get('name', ''))
-                    logo = str(c.get('logo', ''))
-                    if logo and logo not in ['None', 'null', '']:
-                        logo = re.sub(r'^s:\d+:', '', logo)
-                        if logo.startswith('/'): logo = url.rstrip('/') + logo
-                        elif not logo.startswith('http'): logo = url.rstrip('/') + '/' + logo
-                        logo = f"/api/proxy_logo?target={base64.b64encode(logo.encode()).decode()}"
-                    else:
-                        logo = None
-
-                    cat_id = "uncategorized"
-                    for key in ['tv_genre_id', 'category_id', 'genre_id', 'group_id', 'genre']:
-                        val = c.get(key)
-                        if val is not None and str(val) != '':
-                            cat_id = str(val)
-                            break
-                    
-                    cat_name = None
-                    for key in ['category_name', 'genre_name', 'group_name', 'genre_title']:
-                        val = c.get(key)
-                        if val is not None and str(val) != '':
-                            cat_name = str(val)
-                            break
-
-                    if cat_id != "uncategorized" and cat_name:
-                        cid_str = str(cat_id)
-                        cname_str = str(cat_name)
-                        if cid_str not in cat_map:
-                            cat_map[cid_str] = cname_str
-                            categories.append({"id": cid_str, "title": cname_str})
-
-                    # Small memory optimization: only keep what's needed
-                    processed_channels.append({
-                        "id": c.get('id'), 
-                        "name": name, 
-                        "cmd": c.get('cmd'), 
-                        "logo": logo,
-                        "category_id": cat_id
-                    })
-                
-                # Cleanup
-                del all_channels
-                
-                # Sync categories found in channels
-                unique_ids = {ch['category_id'] for ch in processed_channels}
-                for cid in unique_ids:
-                    if cid not in cat_map:
-                        c_name = "Uncategorized" if cid == "uncategorized" else f"Group {cid}"
-                        categories.append({"id": cid, "title": c_name})
-                        cat_map[cid] = c_name
-
-                # Filter and unique
-                unique_categories = []
-                seen_cat_ids = set()
-                for cat in categories:
-                    cid = str(cat.get('id', ''))
-                    if cid and cid not in seen_cat_ids:
-                        seen_cat_ids.add(cid)
-                        unique_categories.append({"id": cid, "title": str(cat.get('title') or cat.get('name', ''))})
-                
-                results.append({
-                    "url": url,
-                    "mac": mac,
-                    "channel_count": len(processed_channels),
-                    "categories": unique_categories,
-                    "channels": processed_channels,
-                    "expiry": expiry
-                })
-                logger.info(f"   -> Found {len(processed_channels)} channels and {len(unique_categories)} categories")
-    finally:
-        gc.collect() # Force cleanup after heavy portal processing
-        
+    # Process portals in parallel
+    tasks = [asyncio.to_thread(process_single_portal, url, mac) for url, mac in pairs]
+    results_raw = await asyncio.gather(*tasks)
+    results = [r for r in results_raw if r is not None]
+    
+    gc.collect()
     return results
 
 @app.get("/api/proxy_logo")
