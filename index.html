@@ -375,6 +375,66 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: hidden;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .player-error-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+        }
+
+        .error-icon {
+            font-size: 3rem;
+            color: #ef4444;
+            margin-bottom: 15px;
+        }
+
+        .error-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: white;
+        }
+
+        .error-desc {
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            max-width: 80%;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .btn-external-fix {
+            background: #fbbf24;
+            color: #000;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .btn-external-fix:hover {
+            transform: scale(1.05);
+            background: #f59e0b;
         }
 
         video {
@@ -578,6 +638,15 @@
     <div class="main-content">
         <div class="player-container">
             <video id="video" controls></video>
+            <div class="player-error-overlay" id="playerErrorOverlay">
+                <div class="error-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                <div class="error-title" id="playerErrorTitle">Playback Failed</div>
+                <div class="error-desc" id="playerErrorDesc">This stream format (likely HEVC/H.265) is not supported by
+                    your browser.</div>
+                <a id="playerErrorVlc" href="#" class="btn-external-fix" target="_blank">
+                    <i class="fas fa-external-link-alt"></i> OPEN IN EXTERNAL PLAYER
+                </a>
+            </div>
             <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span> <a id="vlc-link" href="#"
                     style="color: #3b82f6; margin-left:10px; text-decoration:none; display:none;" target="_blank"><i
                         class="fas fa-external-link-alt"></i> External Player</a></div>
@@ -623,6 +692,11 @@
         let hls = null;
         let mpegPlayer = null;
         let verifiedServers = [];
+
+        function showAlert(msg) {
+            document.getElementById('alertMessage').innerText = msg;
+            document.getElementById('alertModal').style.display = 'flex';
+        }
 
         async function fetchVerified() {
             try {
@@ -922,6 +996,7 @@
             const p = currentPortals[activePortal];
             document.getElementById('ch-name-display').innerText = ch.name + " (Loading...)";
             document.getElementById('now-playing').style.display = 'block';
+            document.getElementById('playerErrorOverlay').style.display = 'none';
 
             try {
                 const res = await fetch('/api/get_link', {
@@ -962,19 +1037,35 @@
             video.load();
         }
 
-        function startPlayer(url, name) {
+        function startPlayer(proxyUrl, name) {
             const video = document.getElementById('video');
             stopPlayers();
 
             document.getElementById('ch-name-display').innerText = name + " (Initializing...)";
 
-            if (url.includes('.m3u8')) {
+            // Better stream type detection by checking the target parameter
+            let isHls = false;
+            try {
+                const urlObj = new URL(proxyUrl, window.location.origin);
+                const target = urlObj.searchParams.get('target');
+                if (target) {
+                    const decodedTarget = atob(target).toLowerCase();
+                    if (decodedTarget.includes('.m3u8')) {
+                        isHls = true;
+                    }
+                }
+            } catch (e) {
+                if (proxyUrl.toLowerCase().includes('.m3u8')) isHls = true;
+            }
+
+            if (isHls) {
+                console.log("Detected HLS stream:", name);
                 if (Hls.isSupported()) {
                     hls = new Hls({
                         xhrSetup: (xhr) => { xhr.withCredentials = false; },
                         backBufferLength: 60
                     });
-                    hls.loadSource(url);
+                    hls.loadSource(proxyUrl);
                     hls.attachMedia(video);
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         video.play().catch(e => console.log("HLS play promise interrupted", e));
@@ -986,16 +1077,18 @@
                         }
                     });
                 } else {
-                    video.src = url;
+                    video.src = proxyUrl;
                     video.play();
                 }
             } else {
+                console.log("Detected MPEG-TS stream:", name);
                 // MPEG-TS via mpegts.js
+                const absoluteUrl = proxyUrl; // For scope consistency
                 if (mpegts.getFeatureList().mseLivePlayback) {
                     mpegPlayer = mpegts.createPlayer({
                         type: 'mpegts',
                         isLive: true,
-                        url: url
+                        url: proxyUrl
                     }, {
                         enableWorker: false,
                         lazyLoadMaxDuration: 3 * 60,
@@ -1007,24 +1100,14 @@
                     mpegPlayer.attachMediaElement(video);
                     mpegPlayer.load();
 
-                    mpegPlayer.play().then(() => {
-                        document.getElementById('ch-name-display').innerText = name;
-                    }).catch(err => {
-                        console.error("MPEG-TS Playback failed:", err);
-                        // Fallback to direct src
-                        video.src = url;
-                        video.play().catch(e => {
-                            document.getElementById('ch-name-display').innerText = name + " (Playback Error: " + err.name + ")";
-                        });
-                    });
-
-                    mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
-                        console.error("MPEG Error:", type, detail, info);
+                    const handlePlaybackError = (error, detail, info) => {
+                        const errorMsg_raw = (error && error.message) ? error.message : (detail || "Unknown");
+                        console.error("MPEG-TS Playback failed:", { error, detail, info, message: errorMsg_raw });
 
                         let errorMsg = "Playback Error";
                         let hideVlc = false;
-                        const stats = mpegPlayer.statisticsInfo;
-                        const isEmpty = stats && stats.totalDataReceived < 1024;
+                        const stats = mpegPlayer ? mpegPlayer.statisticsInfo : null;
+                        const isEmpty = (stats && stats.totalDataReceived < 1024);
 
                         if (detail === 'NetworkError') {
                             errorMsg = "Network/Portal Error";
@@ -1032,19 +1115,36 @@
                             errorMsg = "Empty Stream from Portal";
                             hideVlc = true;
                         } else {
-                            // Detect HEVC in error info if possible
-                            const isHEVC = (info && info.msg && (info.msg.toLowerCase().includes('hevc') || info.msg.toLowerCase().includes('hvc1'))) ||
-                                (info && info.decoded_mime && info.decoded_mime.includes('hvc1'));
+                            // CONSERVATIVE detection: Only blame HEVC if we see specific codec strings
+                            const errorStr = (errorMsg_raw + " " + (info && info.msg ? info.msg : "")).toLowerCase();
+                            const isHEVC = errorStr.includes('hevc') ||
+                                errorStr.includes('hvc1');
+
+                            // Check for generic "no supported source" which could mean anything (often Linux/Chrome missing codecs)
+                            const isUnsupportedFormat = errorStr.includes('supported source') ||
+                                errorStr.includes('notsupportederror');
 
                             if (isHEVC) {
                                 errorMsg = "HEVC/H.265 Not Supported";
-                                showAlert("HEVC (H.265) video detected. Your browser does not support this format natively. Please use the External Player link.");
+                                document.getElementById('playerErrorTitle').innerText = "Codec Not Supported";
+                                document.getElementById('playerErrorDesc').innerText = "This channel uses HEVC (H.265) video. Your browser cannot play this natively, but it will work in VLC.";
+                                document.getElementById('playerErrorVlc').href = document.getElementById('vlc-link').href;
+                                document.getElementById('playerErrorOverlay').style.display = 'flex';
+                            } else if (isUnsupportedFormat) {
+                                errorMsg = "Format Not Supported";
+                                document.getElementById('playerErrorTitle').innerText = "Playback Error";
+                                document.getElementById('playerErrorDesc').innerText = "Your browser failed to decode this MPEG-TS stream. This happens often on some Linux distributions due to missing browser codecs.";
+                                document.getElementById('playerErrorVlc').href = document.getElementById('vlc-link').href;
+                                document.getElementById('playerErrorOverlay').style.display = 'flex';
                             } else {
-                                console.log("Fatal player error, attempting direct fallback...");
-                                video.src = url;
+                                console.log("Attempting direct src fallback for error:", errorMsg_raw);
+                                video.src = absoluteUrl; // Use absoluteUrl from startPlayer scope if compatible
                                 video.play().catch(e => {
+                                    console.error("Fallback playback failed:", e);
                                     document.getElementById('ch-name-display').innerText = name + " (Format Not Supported)";
                                     document.getElementById('vlc-link').style.cssText = "color: #fbbf24; font-weight: bold; font-size: 1.1rem; animation: pulse 2s infinite;";
+                                    document.getElementById('playerErrorVlc').href = document.getElementById('vlc-link').href;
+                                    document.getElementById('playerErrorOverlay').style.display = 'flex';
                                 });
                             }
                         }
@@ -1052,7 +1152,18 @@
                         document.getElementById('ch-name-display').innerText = name + " (" + errorMsg + ")";
                         if (hideVlc) {
                             document.getElementById('vlc-link').style.display = 'none';
+                            document.getElementById('playerErrorOverlay').style.display = 'none';
                         }
+                    };
+
+                    mpegPlayer.play().then(() => {
+                        document.getElementById('ch-name-display').innerText = name;
+                    }).catch(err => {
+                        handlePlaybackError(err, 'PlayError', null);
+                    });
+
+                    mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
+                        handlePlaybackError(null, detail, info);
                     });
                 } else {
                     // Raw fallback

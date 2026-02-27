@@ -14,14 +14,24 @@ import ipaddress
 from urllib.parse import urlparse
 import asyncio
 import os
+from typing import Optional
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configure Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
-)
+log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Stream handler for console
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(log_formatter)
+logger.addHandler(stream_handler)
+
+# File handler for debugging
+file_handler = RotatingFileHandler("app.log", maxBytes=5*1024*1024, backupCount=2)
+file_handler.setFormatter(log_formatter)
+logger.addHandler(file_handler)
 
 # Global Session Pool for better resource management
 session_pool = requests.Session()
@@ -420,75 +430,77 @@ async def get_link(req: StreamRequest):
                 raise HTTPException(status_code=400, detail="Generated stream link is empty")
                 
             b64_url = base64.b64encode(clean_url.encode()).decode()
-            proxy_url = f"/api/proxy_stream?target={b64_url}&mac={req.mac}"
+            b64_origin = base64.b64encode(req.url.encode()).decode()
+            proxy_url = f"/api/proxy_stream?target={b64_url}&mac={req.mac}&origin={b64_origin}"
             return {"url": proxy_url}
     raise HTTPException(status_code=400, detail="Could not create link or link not found")
 
 @app.get("/api/proxy_stream")
-def proxy_stream(target: str, mac: str, request: Request):
+def proxy_stream(target: str, mac: str, request: Request, origin: Optional[str] = None):
     try:
         decoded_bytes = base64.b64decode(target)
         real_url = decoded_bytes.decode('utf-8', errors='ignore')
+        
+        referer = None
+        if origin:
+            try:
+                referer = base64.b64decode(origin).decode('utf-8', errors='ignore')
+            except: pass
+            
         if not is_safe_url(real_url):
             logger.warning(f"Blocked unsafe SSRF attempt to: {real_url}")
             return Response(status_code=403)
             
         # Try to derive host and referer from the target URL
-        parsed_target = urlparse(real_url)
         headers = {
-            'X-User-Agent': 'model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c',
             'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
+            'X-User-Agent': 'model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c',
             'Cookie': f'mac={mac.upper()}',
             'Accept': '*/*',
-            'Connection': 'keep-alive',
-            'Referer': f"{parsed_target.scheme}://{parsed_target.netloc}/",
-            'Host': parsed_target.netloc
+            'Accept-Charset': 'UTF-8,*;q=0.8',
+            'Connection': 'keep-alive'
         }
+        
+        if referer:
+            headers['Referer'] = referer
+        else:
+            # Fallback: Use the portal root as referer
+            parsed = urlparse(real_url)
+            headers['Referer'] = f"{parsed.scheme}://{parsed.netloc}/"
 
         client_range = request.headers.get('range')
         if client_range:
             headers['Range'] = client_range
 
         def iterfile():
-            # Use the global session pool for the stream as well
             try:
-                # Setting stream=True is critical for memory
-                with session_pool.get(real_url, headers=headers, stream=True, timeout=15) as r:
-                    logger.info(f"Portal response for stream: {r.status_code} - Content-Type: {r.headers.get('Content-Type')}")
+                # Use requests.get directly to avoid session cookie pollution
+                # Added verify=False to handle portals with SSL issues
+                with requests.get(real_url, headers=headers, stream=True, timeout=20, verify=False) as r:
+                    upstream_type = r.headers.get('Content-Type', '').lower()
+                    real_url_str = str(real_url)
+                    logger.info(f"Portal response: {r.status_code} - Type: {upstream_type} - URL: {real_url_str}")
+                    
                     if r.status_code >= 400:
-                        logger.error(f"Portal returned error {r.status_code} for {real_url}")
+                        yield f"Proxy Error: Portal returned {r.status_code}".encode()
                         return
 
-                    first_chunk = True
-                    for chunk in r.iter_content(chunk_size=64*1024):
+                    for chunk in r.iter_content(chunk_size=128*1024):
                         if chunk:
-                            if first_chunk:
-                                # Check for MPEG-TS sync byte (0x47)
-                                if not chunk.startswith(b'\x47'):
-                                    sync_index = chunk.find(b'\x47')
-                                    if sync_index == -1:
-                                        logger.warning(f"No sync byte found in first chunk for {real_url}. Possible codec issue.")
-                                    else:
-                                        logger.info(f"Sync byte found at index {sync_index} for {real_url}")
-                                first_chunk = False
                             yield chunk
                         else:
                             break
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
+                yield f"Proxy Stream Error: {e}".encode()
 
-        # Instead of a separate HEAD (which can fail/be blocked), we retrieve content_type inside iterfile
-        # or just use a default and rely on modern browser sniffing since we removed nosniff.
-        content_type = 'video/MP2T'
-        
         return StreamingResponse(
             iterfile(), 
-            media_type=content_type,
+            media_type='video/MP2T',
             headers={
                 "Accept-Ranges": "bytes",
                 "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "no-cache",
-                "X-Proxy-Target": str(real_url)[:100]
+                "Cache-Control": "no-cache"
             }
         )
     except Exception as e:
