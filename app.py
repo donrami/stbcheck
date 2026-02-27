@@ -129,6 +129,26 @@ class StalkerPortal:
     def create_link(self, cmd):
         return self._request({'type': 'itv', 'action': 'create_link', 'cmd': cmd, 'series': '0', 'forced_storage': '0', 'disable_ad': '0', 'download': '0', 'force_ch_link_check': '0'})
 
+    def get_profile(self):
+        return self._request({'type': 'stb', 'action': 'get_profile', 'stb_type': 'MAG250', 'sn': '1234567890123'})
+
+    def get_account_info(self):
+        return self._request({'type': 'stb', 'action': 'get_account_info'})
+
+def detect_expiry(data):
+    if not isinstance(data, dict):
+        return None
+    keys = [
+        'expire_date', 'end_date', 'max_view_date', 
+        'expire_billing_date', 'tariff_expired_date',
+        'date_end', 'exp_date'
+    ]
+    for key in keys:
+        val = data.get(key)
+        if val and str(val).strip() not in ["", "0000-00-00", "0000-00-00 00:00:00", "null", "None"]:
+            return str(val)
+    return None
+
 class CheckRequest(BaseModel):
     text: str
 
@@ -174,11 +194,12 @@ def clean_stalker_url(raw_url):
 @app.post("/api/check")
 async def check_portals(req: CheckRequest):
     logger.info(f"Checking portals for input of length {len(req.text)}")
+    pairs = []
+    # Improved patterns and block splitting
     url_pattern = r'(?:PORTAL|Panel|Server)\s*[:➤\-]\s*(https?://\S+)'
     mac_pattern = r'(?:MAC|Mac)\s*[:➤\-]\s*([0-9A-Fa-f:]{17})'
     
-    pairs = []
-    blocks = re.split(r'\n\s*\n|╭─•|╰─•|🛰|📍|🌍|✅|📆|📡', req.text)
+    blocks = re.split(r'\n\s*\n|╭─•|├─•|╰─•|🛰|📍|🌍|✅|📆|📡', req.text)
     for block in blocks:
         u_match = re.search(url_pattern, block, re.IGNORECASE)
         m_match = re.search(mac_pattern, block, re.IGNORECASE)
@@ -200,6 +221,10 @@ async def check_portals(req: CheckRequest):
             logger.info(f"Analyzing portal: {url} ({mac})")
             portal = StalkerPortal(url, mac)
             if portal.handshake():
+                profile = portal.get_profile()
+                acc_info = portal.get_account_info()
+                expiry = detect_expiry(profile) or detect_expiry(acc_info) or "Unlimited"
+                
                 itv_info = portal.get_itv_info()
                 
                 channels_raw = None
@@ -313,7 +338,8 @@ async def check_portals(req: CheckRequest):
                     "mac": mac,
                     "channel_count": len(processed_channels),
                     "categories": unique_categories,
-                    "channels": processed_channels
+                    "channels": processed_channels,
+                    "expiry": expiry
                 })
                 logger.info(f"   -> Found {len(processed_channels)} channels and {len(unique_categories)} categories")
     finally:

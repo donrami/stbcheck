@@ -100,15 +100,13 @@ def parse_bulk_input(text):
     """
     pairs = []
     
-    # Define patterns for URL and MAC
-    # Keywords: Portal, Panel, Server, Mac
-    # Delimiters: :, ➤
-    url_pattern = r'(?:PORTAL|Panel|Server)\s*[:➤]\s*(https?://\S+)'
-    mac_pattern = r'(?:MAC|Mac)\s*[:➤]\s*([0-9A-Fa-f:]{17})'
+    # Improved patterns and block splitting
+    url_pattern = r'(?:PORTAL|Panel|Server)\s*[:➤\-]\s*(https?://\S+)'
+    mac_pattern = r'(?:MAC|Mac)\s*[:➤\-]\s*([0-9A-Fa-f:]{17})'
 
     # Try block-based parsing first to keep pairs together
     # Split by decorative separators or double newlines
-    blocks = re.split(r'\n\s*\n|╭─•|╰─•|🛰|📍|🌍|✅|📆', text)
+    blocks = re.split(r'\n\s*\n|╭─•|├─•|╰─•|🛰|📍|🌍|✅|📆|📡', text)
     for block in blocks:
         u_match = re.search(url_pattern, block, re.IGNORECASE)
         m_match = re.search(mac_pattern, block, re.IGNORECASE)
