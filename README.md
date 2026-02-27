@@ -2,8 +2,6 @@
 
 A powerful and elegant Stalker Portal checker and player. **STBcheck** allows you to analyze Stalker portals, discover channels, and stream content directly in your browser or through a proxy.
 
-![STBcheck Interface](https://via.placeholder.com/1200x600?text=STBcheck+Interface+Mockup)
-
 ## Features
 
 - **Portal Handshake**: Authenticates with Stalker portals using MAC addresses.
