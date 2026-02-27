@@ -49,4 +49,4 @@ STBcheck includes built-in security measures to protect the host:
 
 ## License
 
-MIT License. See `LICENSE` for more information.
+GNU Affero General Public License v3.0. See `LICENSE` for the full license text.
