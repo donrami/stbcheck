@@ -432,6 +432,7 @@ def proxy_stream(target: str, mac: str, request: Request):
             return Response(status_code=403)
             
         headers = {
+            'X-User-Agent': 'model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c',
             'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
             'Cookie': f'mac={mac.upper()}',
             'Accept': '*/*',
@@ -455,14 +456,11 @@ def proxy_stream(target: str, mac: str, request: Request):
                     for chunk in r.iter_content(chunk_size=64*1024): # 64KB chunks are often better for low latency
                         if chunk:
                             if first_chunk:
-                                # Check for MPEG-TS sync byte (0x47) in the first 188 bytes
-                                # 0x47 is 71 in decimal
-                                if len(chunk) >= 1 and chunk[0] != 0x47:
-                                    # Might not be at index 0, but usually is for fresh streams
-                                    # Let's search for it if it's not at the start
+                                # Check for MPEG-TS sync byte (0x47)
+                                if not chunk.startswith(b'\x47'):
                                     sync_index = chunk.find(b'\x47')
                                     if sync_index == -1:
-                                        logger.warning(f"No sync byte found in first chunk for {real_url}. Data might not be MPEG-TS.")
+                                        logger.warning(f"No sync byte found in first chunk for {real_url}. Possible codec issue.")
                                     else:
                                         logger.info(f"Sync byte found at index {sync_index} for {real_url}")
                                 first_chunk = False
@@ -488,8 +486,7 @@ def proxy_stream(target: str, mac: str, request: Request):
                 "Accept-Ranges": "bytes",
                 "Access-Control-Allow-Origin": "*",
                 "Cache-Control": "no-cache",
-                "X-Content-Type-Options": "nosniff",
-                "X-Proxy-Target": real_url[:50] + "..."
+                "X-Proxy-Target": real_url[:100] # Increased for better visibility
             }
         )
     except Exception as e:
