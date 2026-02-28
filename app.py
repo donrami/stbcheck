@@ -12,7 +12,7 @@ Environment Variables:
 """
 
 import uvicorn
-from app import app
+from app.main import app
 from app.config import settings
 
 if __name__ == "__main__":
