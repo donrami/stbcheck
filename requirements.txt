@@ -2,7 +2,17 @@ fastapi
 uvicorn
 requests
 pydantic
+pydantic-settings
 python-multipart
 # Added for stability
 gunicorn
 asyncio
+
+# Testing dependencies
+pytest
+pytest-asyncio
+httpx
+pytest-mock
+responses
+faker
+factory-boy
