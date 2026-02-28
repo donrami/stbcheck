@@ -5,6 +5,122 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>STBcheck</title>
+    <script>
+        // Suppress non-fatal mpegts.js SourceBuffer errors that occur during player cleanup
+        const originalConsoleError = console.error;
+        const originalConsoleWarn = console.warn;
+        
+        // Helper to check if error string is a mpegts SourceBuffer error
+        function isMpegtsSourceBufferError(errorStr) {
+            if (typeof errorStr !== 'string') {
+                // Try to convert to string if possible
+                try {
+                    errorStr = String(errorStr);
+                } catch (e) {
+                    return false;
+                }
+            }
+            errorStr = errorStr.toLowerCase();
+            
+            // Check for various SourceBuffer error patterns
+            const patterns = [
+                'invalidstateerror',
+                'sourcebuffer',
+                'removed from the parent media source',
+                'this sourcebuffer has been removed',
+                "cannot read property 'buffered'",
+                "cannot read properties of undefined",
+                'msecontroller',
+                'mediamseerror',
+                'failed to read the',
+                "reading 'buffered'"
+            ];
+            
+            // Must contain at least 2 matching patterns to avoid false positives
+            let matchCount = 0;
+            for (const pattern of patterns) {
+                if (errorStr.includes(pattern)) {
+                    matchCount++;
+                }
+            }
+            
+            // Also check for the specific error combination
+            const hasInvalidState = errorStr.includes('invalidstateerror');
+            const hasSourceBuffer = errorStr.includes('sourcebuffer') || errorStr.includes('buffered');
+            
+            return (matchCount >= 2) || (hasInvalidState && hasSourceBuffer);
+        }
+        
+        console.error = function(...args) {
+            const errorStr = args.join(' ');
+            if (isMpegtsSourceBufferError(errorStr)) {
+                return; // Suppress
+            }
+            originalConsoleError.apply(console, args);
+        };
+        
+        console.warn = function(...args) {
+            const errorStr = args.join(' ');
+            if (isMpegtsSourceBufferError(errorStr)) {
+                return; // Suppress
+            }
+            originalConsoleWarn.apply(console, args);
+        };
+        
+        // Suppress unhandled promise rejections for SourceBuffer errors
+        window.addEventListener('unhandledrejection', function(event) {
+            const reason = event.reason;
+            if (!reason) return;
+            
+            // Check various error formats
+            let errorStr = '';
+            if (typeof reason === 'string') {
+                errorStr = reason;
+            } else if (reason.message) {
+                errorStr = reason.message;
+            } else if (reason.toString && reason.toString !== Object.prototype.toString) {
+                errorStr = reason.toString();
+            }
+            
+            if (isMpegtsSourceBufferError(errorStr) || 
+                (reason.name === 'InvalidStateError') ||
+                (reason.stack && isMpegtsSourceBufferError(reason.stack))) {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
+        }, true);
+        
+        // Suppress rejectionhandled events
+        window.addEventListener('rejectionhandled', function(event) {
+            const reason = event.reason;
+            if (!reason) return;
+            
+            let errorStr = '';
+            if (typeof reason === 'string') {
+                errorStr = reason;
+            } else if (reason.message) {
+                errorStr = reason.message;
+            }
+            
+            if (isMpegtsSourceBufferError(errorStr) || reason.name === 'InvalidStateError') {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
+        }, true);
+        
+        // Catch global errors that might slip through
+        window.addEventListener('error', function(event) {
+            const errorStr = event.message || (event.error && event.error.message) || '';
+            if (isMpegtsSourceBufferError(errorStr) || 
+                (event.error && event.error.name === 'InvalidStateError')) {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
+        }, true);
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -426,7 +542,35 @@
             align-items: center;
             justify-content: center;
             overflow: hidden;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            flex-shrink: 0;
+        }
+
+        /* Resizer */
+        .resizer {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            cursor: row-resize;
+            width: 100%;
+            flex-shrink: 0;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 10;
+        }
+
+        .resizer:hover, .resizer.dragging {
+            background: var(--accent);
+        }
+
+        .resizer::after {
+            content: "";
+            width: 30px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
         }
 
         .player-error-overlay {
@@ -878,7 +1022,7 @@
             <i class="fas fa-times"></i>
         </button>
         <div class="logo"><i class="fas fa-satellite-dish"></i> STBcheck</div>
-        <textarea id="portalInput" placeholder="Paste your Portal/MAC list here..."></textarea>
+        <textarea id="portalInput" placeholder="Paste your Portal/MAC list or a link to a website containing them here..."></textarea>
         <button class="btn-check" onclick="checkPortals()">START DISCOVERY</button>
         <button class="btn-view-verified" onclick="showVerifiedModal()">
             <i class="fas fa-check-circle"></i> VERIFIED SERVERS
@@ -911,6 +1055,8 @@
             </div>
             <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span></div>
         </div>
+
+        <div class="resizer" id="resizer"></div>
 
         <div class="channels-grid" id="channelsGrid">
             <div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">
@@ -1175,7 +1321,11 @@
                         if (line.startsWith('data: ')) {
                             try {
                                 const data = JSON.parse(line.substring(6));
-                                if (data.type === 'start') {
+                                if (data.type === 'status') {
+                                    showLoader(true, data.message);
+                                } else if (data.type === 'error') {
+                                    showAlert(data.message);
+                                } else if (data.type === 'start') {
                                     showLoader(true, `Found ${data.total} servers. Starting discovery...`);
                                 } else if (data.type === 'result') {
                                     const result = data.result;
@@ -1522,18 +1672,49 @@
         function stopPlayers() {
             if (hls) { hls.destroy(); hls = null; }
             if (mpegPlayer) {
-                try {
-                    mpegPlayer.pause();
-                    mpegPlayer.unload();
-                    mpegPlayer.detachMediaElement();
-                    mpegPlayer.destroy();
-                } catch (e) { }
+                // Store reference locally and clear global immediately
+                const playerToCleanup = mpegPlayer;
                 mpegPlayer = null;
+                
+                try {
+                    // Stop all internal processing first
+                    if (typeof playerToCleanup.pause === 'function') {
+                        playerToCleanup.pause();
+                    }
+                } catch (e) { /* suppress */ }
+                
+                try {
+                    // Unload stops the internal loader loop
+                    if (typeof playerToCleanup.unload === 'function') {
+                        playerToCleanup.unload();
+                    }
+                } catch (e) { /* suppress */ }
+                
+                // Small delay to let pending promises settle before detaching
+                setTimeout(() => {
+                    try {
+                        if (typeof playerToCleanup.detachMediaElement === 'function') {
+                            playerToCleanup.detachMediaElement();
+                        }
+                    } catch (e) { /* suppress SourceBuffer errors */ }
+                    
+                    try {
+                        if (typeof playerToCleanup.destroy === 'function') {
+                            playerToCleanup.destroy();
+                        }
+                    } catch (e) { /* suppress SourceBuffer errors */ }
+                }, 100); // Increased delay for better promise settlement
             }
             const video = document.getElementById('video');
-            video.pause();
-            video.removeAttribute('src');
-            video.load();
+            if (video) {
+                try {
+                    video.pause();
+                } catch (e) { /* suppress */ }
+                try {
+                    video.removeAttribute('src');
+                    video.load();
+                } catch (e) { /* suppress */ }
+            }
         }
 
         function startPlayer(proxyUrl, name) {
@@ -1584,76 +1765,138 @@
                 // MPEG-TS via mpegts.js
                 const absoluteUrl = proxyUrl; // For scope consistency
                 if (mpegts.getFeatureList().mseLivePlayback) {
-                    mpegPlayer = mpegts.createPlayer({
-                        type: 'mpegts',
-                        isLive: true,
-                        url: proxyUrl
-                    }, {
-                        enableWorker: false,
-                        lazyLoadMaxDuration: 3 * 60,
-                        seekType: 'range',
-                        enableStashBuffer: true,
-                        stashInitialSize: 128 * 1024,
-                    });
+                    // Delay creating new player to allow old player cleanup to complete
+                    setTimeout(() => {
+                        if (!video.isConnected) return; // Exit if video element was removed
+                        
+                        mpegPlayer = mpegts.createPlayer({
+                            type: 'mpegts',
+                            isLive: true,
+                            url: proxyUrl
+                        }, {
+                            enableWorker: false,
+                            lazyLoadMaxDuration: 3 * 60,
+                            seekType: 'range',
+                            enableStashBuffer: true,
+                            stashInitialSize: 128 * 1024,
+                        });
 
-                    mpegPlayer.attachMediaElement(video);
-                    mpegPlayer.load();
+                        // Wrap player methods to suppress SourceBuffer cleanup errors
+                        const originalAttach = mpegPlayer.attachMediaElement.bind(mpegPlayer);
+                        const originalLoad = mpegPlayer.load.bind(mpegPlayer);
+                        const originalPlay = mpegPlayer.play.bind(mpegPlayer);
+                        
+                        mpegPlayer.attachMediaElement = function(...args) {
+                            try {
+                                return originalAttach(...args);
+                            } catch (e) {
+                                // Suppress SourceBuffer errors during attach
+                                if (e && e.name === 'InvalidStateError') return;
+                                throw e;
+                            }
+                        };
+                        
+                        mpegPlayer.load = function(...args) {
+                            try {
+                                return originalLoad(...args);
+                            } catch (e) {
+                                // Suppress SourceBuffer errors during load
+                                if (e && e.name === 'InvalidStateError') return;
+                                throw e;
+                            }
+                        };
+                        
+                        mpegPlayer.play = function(...args) {
+                            return originalPlay(...args).catch(e => {
+                                // Suppress SourceBuffer errors during play, re-throw others
+                                if (e && e.name === 'InvalidStateError') {
+                                    return Promise.resolve();
+                                }
+                                return Promise.reject(e);
+                            });
+                        };
 
-                    const handlePlaybackError = (error, detail, info) => {
-                        const errorMsg_raw = (error && error.message) ? error.message : (detail || "Unknown");
-                        console.error("MPEG-TS Playback failed:", { error, detail, info, message: errorMsg_raw });
-
-                        let errorMsg = "Playback Error";
-                        const stats = mpegPlayer ? mpegPlayer.statisticsInfo : null;
-                        const isEmpty = (stats && stats.totalDataReceived < 1024);
-
-                        if (detail === 'NetworkError') {
-                            errorMsg = "Network/Portal Error";
-                        } else if (isEmpty) {
-                            errorMsg = "Empty Stream from Portal";
-                        } else {
-                            // CONSERVATIVE detection: Only blame HEVC if we see specific codec strings
-                            const errorStr = (errorMsg_raw + " " + (info && info.msg ? info.msg : "")).toLowerCase();
-                            const isHEVC = errorStr.includes('hevc') ||
-                                errorStr.includes('hvc1');
-
-                            // Check for generic "no supported source" which could mean anything (often Linux/Chrome missing codecs)
-                            const isUnsupportedFormat = errorStr.includes('supported source') ||
-                                errorStr.includes('notsupportederror');
-
-                            if (isHEVC) {
-                                errorMsg = "HEVC/H.265 Not Supported";
-                                document.getElementById('playerErrorTitle').innerText = "Codec Not Supported";
-                                document.getElementById('playerErrorDesc').innerText = "This channel uses HEVC (H.265) video. Your browser cannot play this natively.";
-                                document.getElementById('playerErrorOverlay').style.display = 'flex';
-                            } else if (isUnsupportedFormat) {
-                                errorMsg = "Format Not Supported";
-                                document.getElementById('playerErrorTitle').innerText = "Playback Error";
-                                document.getElementById('playerErrorDesc').innerText = "Your browser failed to decode this MPEG-TS stream. This happens often on some Linux distributions due to missing browser codecs.";
-                                document.getElementById('playerErrorOverlay').style.display = 'flex';
-                            } else {
-                                console.log("Attempting direct src fallback for error:", errorMsg_raw);
-                                video.src = absoluteUrl; // Use absoluteUrl from startPlayer scope if compatible
-                                video.play().catch(e => {
-                                    console.error("Fallback playback failed:", e);
-                                    document.getElementById('ch-name-display').innerText = name + " (Format Not Supported)";
-                                    document.getElementById('playerErrorOverlay').style.display = 'flex';
-                                });
+                        try {
+                            mpegPlayer.attachMediaElement(video);
+                            mpegPlayer.load();
+                        } catch (e) {
+                            // If attach/load fails due to cleanup race, ignore
+                            if (e && e.name !== 'InvalidStateError') {
+                                throw e;
                             }
                         }
 
-                        document.getElementById('ch-name-display').innerText = name + " (" + errorMsg + ")";
-                    };
+                        const handlePlaybackError = (error, detail, info) => {
+                            const errorMsg_raw = (error && error.message) ? error.message : (detail || "Unknown");
+                            console.error("MPEG-TS Playback failed:", { error, detail, info, message: errorMsg_raw });
 
-                    mpegPlayer.play().then(() => {
-                        document.getElementById('ch-name-display').innerText = name;
-                    }).catch(err => {
-                        handlePlaybackError(err, 'PlayError', null);
-                    });
+                            let errorMsg = "Playback Error";
+                            const stats = mpegPlayer ? mpegPlayer.statisticsInfo : null;
+                            const isEmpty = (stats && stats.totalDataReceived < 1024);
 
-                    mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
-                        handlePlaybackError(null, detail, info);
-                    });
+                            if (detail === 'NetworkError') {
+                                errorMsg = "Network/Portal Error";
+                            } else if (isEmpty) {
+                                errorMsg = "Empty Stream from Portal";
+                            } else {
+                                // CONSERVATIVE detection: Only blame HEVC if we see specific codec strings
+                                const errorStr = (errorMsg_raw + " " + (info && info.msg ? info.msg : "")).toLowerCase();
+                                const isHEVC = errorStr.includes('hevc') ||
+                                    errorStr.includes('hvc1');
+
+                                // Check for generic "no supported source" which could mean anything (often Linux/Chrome missing codecs)
+                                const isUnsupportedFormat = errorStr.includes('supported source') ||
+                                    errorStr.includes('notsupportederror');
+
+                                if (isHEVC) {
+                                    errorMsg = "HEVC/H.265 Not Supported";
+                                    document.getElementById('playerErrorTitle').innerText = "Codec Not Supported";
+                                    document.getElementById('playerErrorDesc').innerText = "This channel uses HEVC (H.265) video. Your browser cannot play this natively.";
+                                    document.getElementById('playerErrorOverlay').style.display = 'flex';
+                                } else if (isUnsupportedFormat) {
+                                    errorMsg = "Format Not Supported";
+                                    document.getElementById('playerErrorTitle').innerText = "Playback Error";
+                                    document.getElementById('playerErrorDesc').innerText = "Your browser failed to decode this MPEG-TS stream. This happens often on some Linux distributions due to missing browser codecs.";
+                                    document.getElementById('playerErrorOverlay').style.display = 'flex';
+                                } else {
+                                    console.log("Attempting direct src fallback for error:", errorMsg_raw);
+                                    video.src = absoluteUrl; // Use absoluteUrl from startPlayer scope if compatible
+                                    video.play().catch(e => {
+                                        console.error("Fallback playback failed:", e);
+                                        document.getElementById('ch-name-display').innerText = name + " (Format Not Supported)";
+                                        document.getElementById('playerErrorOverlay').style.display = 'flex';
+                                    });
+                                }
+                            }
+
+                            document.getElementById('ch-name-display').innerText = name + " (" + errorMsg + ")";
+                        };
+
+                        // Wrap play call to handle SourceBuffer errors gracefully
+                        if (mpegPlayer) {
+                            mpegPlayer.play().then(() => {
+                                document.getElementById('ch-name-display').innerText = name;
+                            }).catch(err => {
+                                // Don't treat InvalidStateError as a fatal playback error
+                                if (err && err.name === 'InvalidStateError') {
+                                    // This is likely a cleanup race, already handled by suppression
+                                    return;
+                                }
+                                handlePlaybackError(err, 'PlayError', null);
+                            });
+
+                            mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
+                                // Filter out SourceBuffer errors from event handler
+                                if (info && info.msg && typeof info.msg === 'string') {
+                                    const msg = info.msg.toLowerCase();
+                                    if (msg.includes('sourcebuffer') || msg.includes('invalidstate')) {
+                                        return; // Suppress this error
+                                    }
+                                }
+                                handlePlaybackError(null, detail, info);
+                            });
+                        }
+                    }, 200); // 200ms delay to allow cleanup (increased from 100ms)
                 } else {
                     // Raw fallback
                     video.src = url;
@@ -1681,6 +1924,61 @@
                 }
             }
         });
+
+        // Resizable Player Logic
+        const resizer = document.getElementById('resizer');
+        const playerContainer = document.querySelector('.player-container');
+        const mainContent = document.querySelector('.main-content');
+        let isDragging = false;
+
+        resizer.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            resizer.classList.add('dragging');
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+
+            const mainRect = mainContent.getBoundingClientRect();
+            let newHeight = e.clientY - mainRect.top;
+
+            // Constraints
+            const minHeight = 150;
+            const maxHeight = window.innerHeight * 0.8;
+
+            if (newHeight < minHeight) newHeight = minHeight;
+            if (newHeight > maxHeight) newHeight = maxHeight;
+
+            playerContainer.style.height = `${newHeight}px`;
+            
+            // Maintain aspect ratio for the video element if needed, 
+            // but here we want the container to just be the height we dragged to.
+            // The video inside is already set to 100% width/height and will 
+            // letterbox/pillarbox as needed because of object-fit (default is contain for video).
+            // However, if we want the container itself to try to stay 16:9:
+            // let width = playerContainer.offsetWidth;
+            // let aspectHeight = width * (9/16);
+            // if (Math.abs(newHeight - aspectHeight) < 20) newHeight = aspectHeight;
+            // playerContainer.style.height = `${newHeight}px`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                resizer.classList.remove('dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                localStorage.setItem('stb_playerHeight', playerContainer.style.height);
+            }
+        });
+
+        // Restore player height
+        const savedHeight = localStorage.getItem('stb_playerHeight');
+        if (savedHeight && window.innerWidth > 768) {
+            playerContainer.style.height = savedHeight;
+        }
     </script>
 </body>
 

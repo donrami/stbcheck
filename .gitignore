@@ -6,3 +6,5 @@ check_result.json
 venv/
 .env
 .vercel
+verified_servers.json
+vercel.json
