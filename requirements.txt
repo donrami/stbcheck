@@ -8,6 +8,9 @@ python-multipart
 gunicorn
 asyncio
 
+# Rate limiting
+slowapi
+
 # Testing dependencies
 pytest
 pytest-asyncio

@@ -19,7 +19,7 @@ class TestSettings:
         # Clear any existing env vars that might affect defaults
         with patch.dict(os.environ, {}, clear=True):
             settings = Settings()
-            
+
             assert settings.request_timeout == 10
             assert settings.stream_timeout == 20
             assert settings.logo_fetch_timeout == 5
@@ -27,7 +27,9 @@ class TestSettings:
             assert settings.log_level == "INFO"
             assert settings.log_file_max_bytes == 5 * 1024 * 1024  # 5 MB
             assert settings.log_backup_count == 2
-            assert settings.cors_origins == "*"
+            assert (
+                settings.cors_origins == "http://localhost:8000,http://127.0.0.1:8000"
+            )
             assert settings.server_host == "0.0.0.0"
             assert settings.server_port == 8000
             assert settings.app_version == "1.0.1 - Playback Fixes"
@@ -37,31 +39,47 @@ class TestSettings:
         with patch.dict(os.environ, {"CORS_ORIGINS": "*"}, clear=True):
             settings = Settings()
             origins = settings.get_cors_origins_list()
-            
+
             assert origins == ["*"]
 
     def test_get_cors_origins_list_single_origin(self):
         """Test get_cors_origins_list with single origin."""
-        with patch.dict(os.environ, {"CORS_ORIGINS": "https://example.com"}, clear=True):
+        with patch.dict(
+            os.environ, {"CORS_ORIGINS": "https://example.com"}, clear=True
+        ):
             settings = Settings()
             origins = settings.get_cors_origins_list()
-            
+
             assert origins == ["https://example.com"]
 
     def test_get_cors_origins_list_multiple_origins(self):
         """Test get_cors_origins_list with multiple comma-separated origins."""
-        with patch.dict(os.environ, {"CORS_ORIGINS": "https://example.com,https://app.example.com,http://localhost:3000"}, clear=True):
+        with patch.dict(
+            os.environ,
+            {
+                "CORS_ORIGINS": "https://example.com,https://app.example.com,http://localhost:3000"
+            },
+            clear=True,
+        ):
             settings = Settings()
             origins = settings.get_cors_origins_list()
-            
-            assert origins == ["https://example.com", "https://app.example.com", "http://localhost:3000"]
+
+            assert origins == [
+                "https://example.com",
+                "https://app.example.com",
+                "http://localhost:3000",
+            ]
 
     def test_get_cors_origins_list_with_whitespace(self):
         """Test get_cors_origins_list handles whitespace correctly."""
-        with patch.dict(os.environ, {"CORS_ORIGINS": "  https://example.com  ,   https://app.example.com  "}, clear=True):
+        with patch.dict(
+            os.environ,
+            {"CORS_ORIGINS": "  https://example.com  ,   https://app.example.com  "},
+            clear=True,
+        ):
             settings = Settings()
             origins = settings.get_cors_origins_list()
-            
+
             assert origins == ["https://example.com", "https://app.example.com"]
 
     def test_get_cors_origins_list_empty_string(self):
@@ -69,7 +87,7 @@ class TestSettings:
         with patch.dict(os.environ, {"CORS_ORIGINS": ""}, clear=True):
             settings = Settings()
             origins = settings.get_cors_origins_list()
-            
+
             assert origins == []
 
     @patch.dict(os.environ, {"REQUEST_TIMEOUT": "30"}, clear=False)
@@ -91,7 +109,11 @@ class TestSettings:
         settings = Settings()
         assert settings.log_level == "DEBUG"
 
-    @patch.dict(os.environ, {"CORS_ORIGINS": "https://example.com,https://app.example.com"}, clear=False)
+    @patch.dict(
+        os.environ,
+        {"CORS_ORIGINS": "https://example.com,https://app.example.com"},
+        clear=False,
+    )
     def test_env_var_cors_origins(self):
         """Test that CORS_ORIGINS environment variable is loaded."""
         settings = Settings()
@@ -119,12 +141,12 @@ class TestSettings:
         """Test that settings are case insensitive for field names."""
         # Pydantic v2 settings are case insensitive by default with case_sensitive=False
         settings = Settings()
-        assert hasattr(settings, 'request_timeout')
-        assert hasattr(settings, 'REQUEST_TIMEOUT') is False  # Field name is lowercase
+        assert hasattr(settings, "request_timeout")
+        assert hasattr(settings, "REQUEST_TIMEOUT") is False  # Field name is lowercase
 
     def test_extra_env_vars_ignored(self):
         """Test that extra environment variables are ignored (extra='ignore')."""
         with patch.dict(os.environ, {"SOME_RANDOM_VAR": "value"}, clear=False):
             # Should not raise an error
             settings = Settings()
-            assert not hasattr(settings, 'SOME_RANDOM_VAR')
+            assert not hasattr(settings, "SOME_RANDOM_VAR")

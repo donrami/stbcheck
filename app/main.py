@@ -7,17 +7,16 @@ import gc
 import logging
 from logging.handlers import RotatingFileHandler
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Request
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import uvicorn
-import urllib3
 
 from app.config import settings
 from app.routers import portals_router, streams_router
-
-# Disable SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configure Logging
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
@@ -40,17 +39,26 @@ if not os.environ.get("VERCEL"):
             file_handler = RotatingFileHandler(
                 "app.log",
                 maxBytes=settings.log_file_max_bytes,
-                backupCount=settings.log_backup_count
+                backupCount=settings.log_backup_count,
             )
             file_handler.setFormatter(log_formatter)
             logger.addHandler(file_handler)
             logger.info("File logging initialized successfully.")
     except (OSError, Exception) as e:
         # Fallback to console only if file logging is impossible
-        print(f"Notice: File logging disabled (likely read-only environment or permission issue): {e}")
+        print(
+            f"Notice: File logging disabled (likely read-only environment or permission issue): {e}"
+        )
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+# Add rate limit exception handler
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS Middleware
 # SECURITY NOTE: For production, set CORS_ORIGINS env variable to specific domains
@@ -67,6 +75,51 @@ app.add_middleware(
 # Include routers
 app.include_router(portals_router)
 app.include_router(streams_router)
+
+
+# =============================================================================
+# Security Middleware
+# =============================================================================
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers including CSP to all responses."""
+    response = await call_next(request)
+
+    # Content Security Policy
+    # Based on the application's needs:
+    # - Scripts: self + CDNs for HLS.js, mpegts.js
+    # - Styles: self + CDN for Font Awesome + Google Fonts
+    # - Images: self + data: URIs (base64 logos) + fallback CDN
+    # - Connect: self + CDNs for HLS.js, mpegts.js, DOMPurify
+    csp_directives = [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
+        "style-src-elem 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
+        "style-src-attr 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: https://cdn-icons-png.flaticon.com https://*.flaticon.com",
+        "media-src 'self' blob:",
+        "connect-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com",
+        "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "worker-src 'self' blob:",
+    ]
+    response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # X-Frame-Options to prevent clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # Strict Transport Security (if using HTTPS)
+    # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    return response
 
 
 @app.get("/favicon.ico")

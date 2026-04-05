@@ -10,18 +10,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """Application settings with environment variable support.
-    
+
     All fields can be configured via environment variables.
     Default values match the original hardcoded values for backward compatibility.
     """
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",  # Allow extra env variables without errors
     )
-    
+
     # =============================================================================
     # Timeouts (in seconds)
     # =============================================================================
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         description="Timeout for fetching logo images",
         alias="LOGO_FETCH_TIMEOUT",
     )
-    
+
     # =============================================================================
     # Concurrency Limits
     # =============================================================================
@@ -49,7 +49,7 @@ class Settings(BaseSettings):
         description="Maximum number of concurrent portal checks (semaphore limit)",
         alias="MAX_CONCURRENT_PORTAL_CHECKS",
     )
-    
+
     # =============================================================================
     # Logging Configuration
     # =============================================================================
@@ -68,26 +68,28 @@ class Settings(BaseSettings):
         description="Number of backup log files to keep",
         alias="LOG_BACKUP_COUNT",
     )
-    
+
     # =============================================================================
     # CORS Configuration
     # =============================================================================
     cors_origins: str = Field(
-        default="*",
-        description="Comma-separated list of allowed CORS origins, or '*' for all",
+        default="http://localhost:8000,http://127.0.0.1:8000",
+        description="Comma-separated list of allowed CORS origins. Default is development only. Use '*' with caution.",
         alias="CORS_ORIGINS",
     )
-    
+
     def get_cors_origins_list(self) -> List[str]:
         """Parse CORS_ORIGINS string into a list of origins.
-        
+
         Returns:
             List of allowed origins, or ["*"] if set to wildcard.
         """
         if self.cors_origins == "*":
             return ["*"]
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-    
+        return [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
+
     # =============================================================================
     # Server Configuration
     # =============================================================================
@@ -101,7 +103,7 @@ class Settings(BaseSettings):
         description="Port number for the server",
         alias="SERVER_PORT",
     )
-    
+
     # =============================================================================
     # Application Settings
     # =============================================================================
@@ -109,6 +111,24 @@ class Settings(BaseSettings):
         default="1.0.1 - Playback Fixes",
         description="Application version string",
         alias="APP_VERSION",
+    )
+
+    # =============================================================================
+    # Security Settings
+    # =============================================================================
+    verify_ssl: bool = Field(
+        default=True,
+        description="Verify SSL certificates for outbound HTTP requests (set to false only for testing with self-signed certs)",
+        alias="VERIFY_SSL",
+    )
+
+    # =============================================================================
+    # Redis Configuration (Optional - for shared logo cache across workers)
+    # =============================================================================
+    redis_url: str = Field(
+        default="",
+        description="Redis URL for shared logo cache (e.g., redis://localhost:6379/0). If empty, uses in-memory cache.",
+        alias="REDIS_URL",
     )
 
 

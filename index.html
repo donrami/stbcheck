@@ -122,56 +122,149 @@
         }, true);
     </script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <script defer src="/_vercel/insights/script.js"></script>
     <style>
         :root {
-            --bg-dark: #0f172a;
-            --accent: #3b82f6;
-            --accent-glow: rgba(59, 130, 246, 0.5);
-            --card-bg: rgba(30, 41, 59, 0.7);
-            --text-main: #f8fafc;
-            --text-dim: #94a3b8;
+            /* === Color System === */
+            /* Background layers - Coolors purple-blue palette: #f72585, #b5179e, #7209b7, #560bad, #480ca8, #3a0ca3, #3f37c9, #4361ee, #4895ef, #4cc9f0 */
+            --bg-base: #0a0a1a;
+            --bg-elevated: #12122a;
+            --bg-deep: #050510;
+            --bg-overlay: rgba(10, 10, 26, 0.95);
+            
+            /* Surface colors */
+            --surface-card: rgba(18, 18, 42, 0.8);
+            --surface-card-hover: rgba(30, 30, 60, 0.5);
+            --surface-active: rgba(58, 12, 163, 0.3);
+            --surface-input: rgba(5, 5, 16, 0.6);
+            --surface-interactive: rgba(67, 97, 238, 0.2);
+            --surface-interactive-hover: rgba(67, 97, 238, 0.35);
+            
+            /* Accent - derived from #4361ee (vibrant blue) */
+            --accent: #4361ee;
+            --accent-hover: #4895ef;
+            --accent-glow: rgba(67, 97, 238, 0.45);
+            --accent-subtle: rgba(67, 97, 238, 0.15);
+            
+            /* Text colors */
+            --text-primary: #e8eaf6;
+            --text-secondary: #9fa8da;
+            --text-muted: #7986cb;
+            
+            /* Semantic colors */
+            --color-success: #22c55e;
+            --color-success-bg: rgba(34, 197, 94, 0.15);
+            --color-success-hover: #16a34a;
+            --color-error: #ef4444;
+            --color-error-bg: rgba(239, 68, 68, 0.15);
+            --color-error-hover: #dc2626;
+            --color-warning: #fbbf24;
+            --color-warning-bg: rgba(251, 191, 36, 0.15);
+            --color-warning-hover: #f59e0b;
+            
+            /* Borders */
+            --border-subtle: rgba(67, 97, 238, 0.25);
+            --border-default: rgba(67, 97, 238, 0.4);
+            --border-accent: rgba(67, 97, 238, 0.5);
+            
+            /* === Typography Scale === */
+            --font-family: 'Outfit', system-ui, sans-serif;
+            --font-size-xs: 0.75rem;    /* 12px */
+            --font-size-sm: 0.8rem;     /* 13px */
+            --font-size-base: 0.9rem;   /* 14px */
+            --font-size-md: 1rem;       /* 16px */
+            --font-size-lg: 1.125rem;   /* 18px */
+            --font-size-xl: 1.25rem;    /* 20px */
+            --font-size-2xl: 1.5rem;    /* 24px */
+            --font-size-3xl: 2rem;       /* 32px */
+            
+            --font-weight-normal: 400;
+            --font-weight-medium: 500;
+            --font-weight-semibold: 600;
+            --font-weight-bold: 700;
+            
+            --line-height-tight: 1.25;
+            --line-height-normal: 1.5;
+            --line-height-relaxed: 1.625;
+            
+            /* === Spacing Scale === */
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+            --space-6: 24px;
+            --space-8: 32px;
+            --space-10: 40px;
+            --space-12: 48px;
+            
+            /* === Border Radius === */
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 20px;
+            --radius-full: 9999px;
+            
+            /* === Shadows === */
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+            --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+            --shadow-xl: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+            --shadow-glow: 0 0 20px var(--accent-glow);
+            --shadow-depth: 0 8px 32px rgba(0, 0, 0, 0.4);
+            
+            /* === Motion === */
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+            --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            
+            --duration-fast: 150ms;
+            --duration-base: 200ms;
+            --duration-slow: 300ms;
+            --duration-slower: 400ms;
         }
 
         * {
             box-sizing: border-box;
-            font-family: 'Outfit', sans-serif;
+            font-family: var(--font-family);
         }
 
         body {
             margin: 0;
-            background: var(--bg-dark);
-            color: var(--text-main);
+            background: var(--bg-base);
+            color: var(--text-primary);
             display: flex;
             height: 100vh;
             overflow: hidden;
+            font-size: var(--font-size-base);
+            line-height: var(--line-height-normal);
         }
 
         /* Sidebar */
         .sidebar {
             width: 300px;
-            background: rgba(15, 23, 42, 0.95);
-            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-base) 100%);
+            border-right: 1px solid var(--border-subtle);
+            box-shadow: var(--shadow-depth);
             display: flex;
             flex-direction: column;
-            padding: 20px;
+            padding: var(--space-5);
             z-index: 100;
         }
 
         .logo {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 25px;
+            font-size: var(--font-size-2xl);
+            font-weight: var(--font-weight-bold);
+            margin-bottom: var(--space-6);
             color: var(--accent);
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 10px;
+            gap: var(--space-3);
             flex-shrink: 0;
         }
-
 
         .logo i {
             filter: drop-shadow(0 0 8px var(--accent-glow));
@@ -180,45 +273,81 @@
         textarea {
             width: 100%;
             height: 200px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            color: white;
-            padding: 12px;
-            font-size: 0.9rem;
+            background: var(--surface-input);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            padding: var(--space-3);
+            font-size: var(--font-size-base);
             resize: none;
             outline: none;
-            transition: 0.3s;
+            transition: border-color var(--duration-base) var(--ease-out),
+                        box-shadow var(--duration-base) var(--ease-out);
             flex-shrink: 0;
+            maxlength: 50000;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
-
 
         textarea:focus {
             border-color: var(--accent);
-            box-shadow: 0 0 10px var(--accent-glow);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
-        .btn-check {
-            margin-top: 15px;
+        /* Primary Button */
+        .btn-primary {
+            margin-top: var(--space-4);
             background: var(--accent);
-            color: white;
+            color: var(--text-primary);
             border: none;
-            padding: 12px;
-            border-radius: 12px;
-            font-weight: 600;
+            padding: var(--space-3) var(--space-4);
+            border-radius: var(--radius-md);
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-base);
             cursor: pointer;
-            transition: 0.3s;
+            transition: transform var(--duration-base) var(--ease-out),
+                        box-shadow var(--duration-base) var(--ease-out),
+                        background-color var(--duration-fast) var(--ease-out);
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-2);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-glow);
+            background: var(--accent-hover);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        /* Backwards compatibility alias */
+        .btn-check {
+            margin-top: var(--space-4);
+            background: var(--accent);
+            color: var(--text-primary);
+            border: none;
+            padding: var(--space-3) var(--space-4);
+            border-radius: var(--radius-md);
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-base);
+            cursor: pointer;
+            transition: transform var(--duration-base) var(--ease-out),
+                        box-shadow var(--duration-base) var(--ease-out);
             flex-shrink: 0;
         }
 
-
         .btn-check:hover {
             transform: translateY(-2px);
-            filter: brightness(1.1);
+            box-shadow: var(--shadow-glow);
         }
 
         .porta-list {
-            margin-top: 20px;
+            margin-top: var(--space-5);
             overflow-y: auto;
             overflow-x: hidden;
             flex-grow: 1;
@@ -228,45 +357,47 @@
 
 
         .portal-name {
-            font-weight: 600;
-            font-size: 0.9rem;
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-base);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
         .portal-stats {
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            margin-top: 5px;
+            font-size: var(--font-size-xs);
+            color: var(--text-secondary);
+            margin-top: var(--space-1);
         }
 
         .portal-item {
             position: relative;
-            background: var(--card-bg);
-            padding: 12px 15px;
-            border-radius: 12px;
-            margin-bottom: 12px;
+            background: var(--surface-card);
+            padding: var(--space-3) var(--space-4);
+            border-radius: var(--radius-lg);
+            margin-bottom: var(--space-3);
             cursor: pointer;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid var(--border-subtle);
+            box-shadow: var(--shadow-sm);
+            transition: border-color var(--duration-base) var(--ease-out),
+                        background-color var(--duration-base) var(--ease-out),
+                        box-shadow var(--duration-base) var(--ease-out);
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: var(--space-2);
             overflow: hidden;
         }
 
         .portal-item:hover {
             border-color: var(--accent);
-            background: rgba(59, 130, 246, 0.1);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            background: var(--surface-card-hover);
+            box-shadow: var(--shadow-lg);
         }
 
         .portal-item.active {
             border-color: var(--accent);
-            background: rgba(59, 130, 246, 0.15);
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+            background: var(--surface-active);
+            box-shadow: 0 0 20px var(--accent-glow);
         }
 
         .portal-content-main {
@@ -276,53 +407,88 @@
 
         .portal-actions {
             display: flex;
-            gap: 8px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            gap: var(--space-2);
+            padding-top: var(--space-2);
+            border-top: 1px solid var(--border-subtle);
             justify-content: center;
         }
 
-        .btn-action,
-        .btn-verify {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-dim);
-            width: 32px;
-            height: 28px;
-            border-radius: 6px;
+        /* Icon Button - small interactive */
+        .btn-icon {
+            background: var(--surface-interactive);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+            width: 44px;
+            height: 44px;
+            border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: 0.2s;
-            font-size: 0.75rem;
+            transition: background-color var(--duration-fast) var(--ease-out),
+                        color var(--duration-fast) var(--ease-out),
+                        border-color var(--duration-fast) var(--ease-out),
+                        transform var(--duration-base) var(--ease-out);
+            font-size: var(--font-size-xs);
+            flex-shrink: 0;
+        }
+
+        .btn-icon:hover {
+            background: var(--surface-interactive-hover);
+            color: var(--text-primary);
+            border-color: var(--border-default);
+            transform: translateY(-2px);
+        }
+
+        .btn-icon:active {
+            transform: translateY(0);
+        }
+
+        /* Backwards compatibility aliases */
+        .btn-action,
+        .btn-verify {
+            background: var(--surface-interactive);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+            width: 44px;
+            height: 44px;
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background-color var(--duration-fast) var(--ease-out),
+                        color var(--duration-fast) var(--ease-out),
+                        border-color var(--duration-fast) var(--ease-out),
+                        transform var(--duration-base) var(--ease-out);
+            font-size: var(--font-size-xs);
             flex-shrink: 0;
         }
 
         .btn-action:hover,
         .btn-verify:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            border-color: rgba(255, 255, 255, 0.2);
+            background: var(--surface-interactive-hover);
+            color: var(--text-primary);
+            border-color: var(--border-default);
             transform: translateY(-2px);
         }
 
         .btn-action.copied {
-            background: #22c55e;
-            color: white;
-            border-color: #22c55e;
+            background: var(--color-success);
+            color: var(--text-primary);
+            border-color: var(--color-success);
         }
 
         .btn-verify.is-verified {
-            background: rgba(34, 197, 94, 0.1);
-            color: #22c55e;
+            background: var(--color-success-bg);
+            color: var(--color-success);
             border-color: rgba(34, 197, 94, 0.3);
             opacity: 1;
         }
 
         .btn-verify.is-verified:hover {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
+            background: var(--color-error-bg);
+            color: var(--color-error);
             border-color: rgba(239, 68, 68, 0.3);
         }
 
@@ -337,7 +503,7 @@
         }
 
         .portal-item.empty:hover {
-            background: rgba(239, 68, 68, 0.08);
+            background: var(--color-error-bg);
             border-color: rgba(239, 68, 68, 0.2);
         }
 
@@ -357,42 +523,46 @@
         }
 
         .modal-content {
-            background: var(--bg-dark);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--bg-base);
+            border: 1px solid var(--border-default);
             width: 90%;
             max-width: 600px;
             max-height: 80vh;
-            border-radius: 20px;
-            padding: 30px;
+            border-radius: var(--radius-xl);
+            padding: var(--space-8);
             display: flex;
             flex-direction: column;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            box-shadow: var(--shadow-xl);
         }
 
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: var(--space-5);
         }
 
         .modal-title {
-            font-size: 1.25rem;
-            font-weight: 700;
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-bold);
             color: var(--accent);
         }
 
         .close-modal {
             background: none;
             border: none;
-            color: var(--text-dim);
-            font-size: 1.5rem;
+            color: var(--text-secondary);
+            font-size: var(--font-size-xl);
             cursor: pointer;
-            transition: 0.2s;
+            transition: color var(--duration-fast) var(--ease-out);
+            padding: var(--space-1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .close-modal:hover {
-            color: white;
+            color: var(--text-primary);
         }
 
         .verified-list {
@@ -401,21 +571,22 @@
         }
 
         .verified-item {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 15px;
-            border-radius: 12px;
-            margin-bottom: 10px;
+            background: var(--surface-interactive);
+            padding: var(--space-4);
+            border-radius: var(--radius-md);
+            margin-bottom: var(--space-3);
             border: 1px solid transparent;
-            transition: 0.3s;
+            transition: border-color var(--duration-base) var(--ease-out),
+                        background-color var(--duration-base) var(--ease-out);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 15px;
+            gap: var(--space-4);
         }
 
         .verified-item:hover {
-            border-color: rgba(59, 130, 246, 0.3);
-            background: rgba(59, 130, 246, 0.05);
+            border-color: var(--border-accent);
+            background: var(--surface-card-hover);
         }
 
         .verified-info {
@@ -424,65 +595,100 @@
         }
 
         .btn-copy {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-dim);
-            width: 38px;
-            height: 38px;
-            border-radius: 10px;
+            background: var(--surface-interactive);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+            width: 44px;
+            height: 44px;
+            border-radius: var(--radius-md);
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: 0.2s;
+            transition: background-color var(--duration-fast) var(--ease-out),
+                        color var(--duration-fast) var(--ease-out),
+                        border-color var(--duration-fast) var(--ease-out),
+                        transform var(--duration-base) var(--ease-out);
             flex-shrink: 0;
         }
 
         .btn-copy:hover {
             background: var(--accent);
-            color: white;
+            color: var(--text-primary);
             border-color: var(--accent);
             transform: scale(1.05);
         }
 
         .btn-copy.copied {
-            background: #22c55e;
-            color: white;
-            border-color: #22c55e;
+            background: var(--color-success);
+            color: var(--text-primary);
+            border-color: var(--color-success);
+        }
+
+        .btn-delete {
+            background: var(--color-error-bg);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: var(--color-error);
+            width: 44px;
+            height: 44px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background-color var(--duration-fast) var(--ease-out),
+                        color var(--duration-fast) var(--ease-out),
+                        border-color var(--duration-fast) var(--ease-out),
+                        transform var(--duration-base) var(--ease-out);
+            flex-shrink: 0;
+            margin-left: var(--space-2);
+        }
+
+        .btn-delete:hover {
+            background: var(--color-error);
+            color: var(--text-primary);
+            border-color: var(--color-error);
+            transform: scale(1.05);
+        }
+
+        .verified-actions {
+            display: flex;
+            align-items: center;
         }
 
         .verified-url {
-            font-weight: 600;
-            font-size: 0.9rem;
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-base);
             word-break: break-all;
         }
 
         .verified-mac {
-            font-size: 0.8rem;
-            color: var(--text-dim);
-            margin-top: 4px;
+            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
+            margin-top: var(--space-1);
         }
 
         .btn-view-verified {
-            margin-top: 10px;
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-main);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 10px;
-            border-radius: 12px;
-            font-weight: 600;
+            margin-top: var(--space-3);
+            background: var(--surface-interactive);
+            color: var(--text-primary);
+            border: 1px solid var(--border-default);
+            padding: var(--space-3);
+            border-radius: var(--radius-md);
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-base);
             cursor: pointer;
-            transition: 0.3s;
+            transition: background-color var(--duration-base) var(--ease-out),
+                        border-color var(--duration-base) var(--ease-out);
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 10px;
+            gap: var(--space-3);
             flex-shrink: 0;
         }
 
-
         .btn-view-verified:hover {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--surface-interactive-hover);
             border-color: var(--accent);
         }
 
@@ -492,44 +698,44 @@
             display: flex;
             flex-direction: column;
             position: relative;
-            background: #0f172a;
+            background: var(--bg-base);
         }
 
         .categories-sidebar {
             width: 250px;
             background: rgba(15, 23, 42, 0.85);
-            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid var(--border-subtle);
             display: flex;
             flex-direction: column;
-            padding: 20px 10px;
+            padding: var(--space-5) var(--space-3);
             overflow-y: auto;
             overflow-x: hidden;
             display: none;
-            /* Hidden until portal selected */
         }
 
         .category-item {
-            padding: 10px 15px;
-            border-radius: 8px;
-            margin-bottom: 5px;
+            padding: var(--space-3) var(--space-4);
+            border-radius: var(--radius-sm);
+            margin-bottom: var(--space-1);
             cursor: pointer;
-            font-size: 0.85rem;
-            color: var(--text-dim);
-            transition: 0.2s;
+            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
+            transition: background-color var(--duration-fast) var(--ease-out),
+                        color var(--duration-fast) var(--ease-out);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
         .category-item:hover {
-            background: rgba(255, 255, 255, 0.05);
-            color: white;
+            background: var(--surface-interactive);
+            color: var(--text-primary);
         }
 
         .category-item.active {
             background: var(--accent);
-            color: white;
-            font-weight: 600;
+            color: var(--text-primary);
+            font-weight: var(--font-weight-semibold);
         }
 
         /* Video Player Area */
@@ -547,21 +753,31 @@
 
         /* Resizer */
         .resizer {
-            height: 8px;
+            height: 12px;
             background: rgba(255, 255, 255, 0.05);
             cursor: row-resize;
             width: 100%;
             flex-shrink: 0;
-            transition: background 0.2s;
+            transition: background-color var(--duration-fast) var(--ease-out);
             display: flex;
             align-items: center;
             justify-content: center;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid var(--border-subtle);
+            border-bottom: 1px solid var(--border-subtle);
             z-index: 10;
         }
 
-        .resizer:hover, .resizer.dragging {
+        .resizer::before {
+            content: "";
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            position: absolute;
+            pointer-events: none;
+        }
+
+        .resizer:hover,
+        .resizer.dragging {
             background: var(--accent);
         }
 
@@ -571,6 +787,8 @@
             height: 2px;
             background: rgba(255, 255, 255, 0.3);
             border-radius: 2px;
+            position: absolute;
+            pointer-events: none;
         }
 
         .player-error-overlay {
@@ -579,82 +797,85 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(15, 23, 42, 0.95);
+            background: var(--bg-overlay);
             display: none;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
-            padding: 20px;
+            padding: var(--space-5);
             z-index: 10;
             backdrop-filter: blur(5px);
         }
 
         .close-overlay {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-dim);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
+            top: var(--space-5);
+            right: var(--space-5);
+            background: var(--surface-interactive);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+            width: 44px;
+            height: 44px;
+            border-radius: var(--radius-full);
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: 0.3s;
+            transition: background-color var(--duration-base) var(--ease-out),
+                        color var(--duration-base) var(--ease-out),
+                        transform var(--duration-slow) var(--ease-out);
             font-size: 1.4rem;
             z-index: 15;
         }
 
         .close-overlay:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
-            border-color: rgba(255, 255, 255, 0.3);
+            background: var(--surface-interactive-hover);
+            color: var(--text-primary);
+            border-color: var(--border-default);
             transform: rotate(90deg);
         }
 
         .error-icon {
-            font-size: 3rem;
-            color: #ef4444;
-            margin-bottom: 15px;
+            font-size: var(--font-size-3xl);
+            color: var(--color-error);
+            margin-bottom: var(--space-4);
         }
 
         .error-title {
-            font-size: 1.2rem;
-            font-weight: 700;
-            margin-bottom: 10px;
-            color: white;
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-bold);
+            margin-bottom: var(--space-3);
+            color: var(--text-primary);
         }
 
         .error-desc {
-            font-size: 0.9rem;
-            color: var(--text-dim);
+            font-size: var(--font-size-base);
+            color: var(--text-secondary);
             max-width: 80%;
-            margin-bottom: 20px;
-            line-height: 1.5;
+            margin-bottom: var(--space-5);
+            line-height: var(--line-height-relaxed);
         }
 
         .btn-external-fix {
-            background: #fbbf24;
-            color: #000;
+            background: var(--color-warning);
+            color: var(--bg-base);
             border: none;
-            padding: 12px 25px;
-            border-radius: 12px;
-            font-weight: 700;
+            padding: var(--space-3) var(--space-6);
+            border-radius: var(--radius-md);
+            font-weight: var(--font-weight-bold);
             cursor: pointer;
-            transition: 0.3s;
-            display: flex;
+            transition: transform var(--duration-base) var(--ease-out),
+                        background-color var(--duration-fast) var(--ease-out);
+            display: inline-flex;
             align-items: center;
-            gap: 10px;
+            gap: var(--space-3);
             text-decoration: none;
         }
 
         .btn-external-fix:hover {
             transform: scale(1.05);
-            background: #f59e0b;
+            background: var(--color-warning-hover);
         }
 
         video {
@@ -665,26 +886,26 @@
 
         #now-playing {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: var(--space-5);
+            left: var(--space-5);
             background: rgba(0, 0, 0, 0.7);
-            padding: 10px 20px;
-            border-radius: 30px;
+            padding: var(--space-3) var(--space-5);
+            border-radius: var(--radius-full);
             backdrop-filter: blur(10px);
-            font-weight: 600;
+            font-weight: var(--font-weight-semibold);
             display: none;
         }
 
         /* Grid Area */
         .channels-grid {
-            padding: 25px;
+            padding: var(--space-6);
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
             align-content: start;
-            gap: 15px;
+            gap: var(--space-4);
             overflow-y: auto;
             flex-grow: 1;
-            transition: opacity 0.3s ease;
+            transition: opacity var(--duration-slow) var(--ease-out);
         }
 
         .channels-grid.loading {
@@ -693,14 +914,18 @@
         }
 
         .channel-card {
-            background: var(--card-bg);
-            border-radius: 15px;
-            padding: 15px;
+            background: var(--surface-card);
+            border-radius: var(--radius-lg);
+            padding: var(--space-4);
             text-align: center;
             cursor: pointer;
-            transition: 0.3s;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            animation: fadeIn 0.4s ease forwards;
+            transition: transform var(--duration-base) var(--ease-out),
+                        background-color var(--duration-base) var(--ease-out),
+                        border-color var(--duration-base) var(--ease-out),
+                        box-shadow var(--duration-base) var(--ease-out);
+            border: 1px solid var(--border-subtle);
+            box-shadow: var(--shadow-sm);
+            animation: fadeIn var(--duration-slow) var(--ease-out) forwards;
         }
 
         @keyframes fadeIn {
@@ -708,7 +933,6 @@
                 opacity: 0;
                 transform: translateY(10px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -717,27 +941,63 @@
 
         .channel-card:hover {
             transform: scale(1.05);
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--surface-interactive-hover);
             border-color: var(--accent);
+            box-shadow: var(--shadow-lg);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .channel-card:hover {
+            transform: scale(1.05);
+            background: var(--surface-interactive-hover);
+            border-color: var(--accent);
+            box-shadow: var(--shadow-lg);
+        }
+
+        #channelSearchInput:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
         .channel-logo {
             width: 60px;
             height: 60px;
-            margin: 0 auto 10px;
+            margin: 0 auto var(--space-3);
             background: rgba(0, 0, 0, 0.3);
-            border-radius: 50%;
+            border-radius: var(--radius-full);
             display: flex;
             align-items: center;
             justify-content: center;
             object-fit: contain;
         }
 
+        .channel-logo-placeholder {
+            font-size: var(--font-size-xl);
+            color: var(--text-secondary);
+        }
+
+        .channel-logo img.channel-logo {
+            width: 60px;
+            height: 60px;
+        }
+
         .channel-name {
-            font-size: 0.8rem;
-            font-weight: 500;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
             overflow: hidden;
-            height: 1.2rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
         }
 
         ::-webkit-scrollbar {
@@ -746,7 +1006,151 @@
 
         ::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
+            border-radius: var(--radius-sm);
+        }
+
+        /* Text Overflow & Truncation Utilities */
+        .truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* Flex/Grid overflow prevention */
+        .flex-item {
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .grid-item {
+            min-width: 0;
+            min-height: 0;
+        }
+
+        /* i18n support - RTL and logical properties */
+        [dir="rtl"] .arrow {
+            transform: scaleX(-1);
+        }
+
+        /* Prevent layout breaking with long text */
+        .portal-name {
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-base);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+
+        /* Category items - flexible with text overflow */
+        .category-item {
+            padding: var(--space-3) var(--space-4);
+            border-radius: var(--radius-sm);
+            margin-bottom: var(--space-1);
+            cursor: pointer;
+            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
+            transition: background-color var(--duration-fast) var(--ease-out),
+                        color var(--duration-fast) var(--ease-out);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+            flex-shrink: 0;
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            background: var(--surface-input);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            padding: var(--space-3);
+            font-size: var(--font-size-base);
+            resize: none;
+            outline: none;
+            transition: border-color var(--duration-base) var(--ease-out),
+                        box-shadow var(--duration-base) var(--ease-out);
+            flex-shrink: 0;
+            maxlength: 50000;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        /* Reduced motion support for accessibility */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* High contrast mode support */
+        @media (prefers-contrast: high) {
+            :root {
+                --bg-base: #000000;
+                --bg-elevated: #000000;
+                --bg-overlay: rgba(0, 0, 0, 0.95);
+                --text-primary: #ffffff;
+                --text-secondary: #cccccc;
+                --text-muted: #ffffff;
+                --surface-card: rgba(0, 0, 0, 0.8);
+                --surface-interactive: rgba(255, 255, 255, 0.1);
+                --border-subtle: rgba(255, 255, 255, 0.3);
+                --border-default: rgba(255, 255, 255, 0.5);
+            }
+            .channel-card,
+            .portal-item {
+                border: 2px solid #ffffff;
+            }
+            .channel-card:hover,
+            .portal-item:hover {
+                border-color: #ffffff;
+            }
+        }
+
+        /* Focus visible for keyboard navigation */
+        *:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        /* Skip link for accessibility */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: var(--accent);
+            color: var(--text-primary);
+            padding: var(--space-2);
+            z-index: 10000;
+            transition: top var(--duration-slow) var(--ease-out);
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        /* Visually hidden but accessible to screen readers */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
 
         /* Loading Overlay */
@@ -762,7 +1166,7 @@
             align-items: center;
             justify-content: center;
             flex-direction: column;
-            gap: 20px;
+            gap: var(--space-5);
         }
 
         .spinner {
@@ -770,8 +1174,9 @@
             height: 50px;
             border: 4px solid var(--accent-glow);
             border-top-color: var(--accent);
-            border-radius: 50%;
+            border-radius: var(--radius-full);
             animation: spin 1s linear infinite;
+            will-change: transform;
         }
 
         @keyframes spin {
@@ -784,46 +1189,107 @@
         .alert-modal-content {
             max-width: 400px;
             text-align: center;
-            padding: 40px 30px;
-            border-radius: 24px;
-            background: linear-gradient(145deg, #1e293b, #0f172a);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            padding: var(--space-10) var(--space-8);
+            border-radius: var(--radius-xl);
+            background: linear-gradient(145deg, var(--bg-elevated), var(--bg-base));
+            border: 1px solid var(--accent-subtle);
+            box-shadow: var(--shadow-lg);
         }
 
         .alert-icon {
-            font-size: 3.5rem;
+            font-size: var(--font-size-3xl);
             color: var(--accent);
-            margin-bottom: 20px;
+            margin-bottom: var(--space-5);
             filter: drop-shadow(0 0 15px var(--accent-glow));
         }
 
         .alert-message {
-            font-size: 1.1rem;
-            line-height: 1.6;
-            margin-bottom: 30px;
-            color: var(--text-main);
-            font-weight: 500;
+            font-size: var(--font-size-md);
+            line-height: var(--line-height-relaxed);
+            margin-bottom: var(--space-8);
+            color: var(--text-primary);
+            font-weight: var(--font-weight-medium);
         }
 
         .btn-alert-ok {
             background: var(--accent);
-            color: white;
+            color: var(--text-primary);
             border: none;
-            padding: 12px 40px;
-            border-radius: 12px;
-            font-weight: 700;
+            padding: var(--space-3) var(--space-10);
+            border-radius: var(--radius-md);
+            font-weight: var(--font-weight-bold);
+            font-size: var(--font-size-base);
             cursor: pointer;
-            transition: 0.3s;
+            transition: transform var(--duration-base) var(--ease-out),
+                        box-shadow var(--duration-base) var(--ease-out);
             box-shadow: 0 4px 12px var(--accent-glow);
         }
 
         .btn-alert-ok:hover {
             transform: translateY(-2px);
-            filter: brightness(1.1);
             box-shadow: 0 6px 16px var(--accent-glow);
         }
 
+        /* Confirmation Modal Styles */
+        .confirm-buttons {
+            display: flex;
+            gap: var(--space-4);
+            justify-content: center;
+        }
+
+        .btn-confirm-cancel {
+            background: var(--surface-interactive);
+            color: var(--text-primary);
+            border: 1px solid var(--border-default);
+            padding: var(--space-3) var(--space-8);
+            border-radius: var(--radius-md);
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-base);
+            cursor: pointer;
+            transition: background-color var(--duration-base) var(--ease-out),
+                        transform var(--duration-base) var(--ease-out);
+        }
+
+        .btn-confirm-cancel:hover {
+            background: var(--surface-interactive-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn-confirm-delete {
+            background: var(--color-error);
+            color: var(--text-primary);
+            border: none;
+            padding: var(--space-3) var(--space-8);
+            border-radius: var(--radius-md);
+            font-weight: var(--font-weight-bold);
+            font-size: var(--font-size-base);
+            cursor: pointer;
+            transition: transform var(--duration-base) var(--ease-out),
+                        box-shadow var(--duration-base) var(--ease-out);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-confirm-delete:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+        }
+
+        /* Tablet breakpoint (landscape tablets and small laptops) */
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 260px;
+            }
+
+            .categories-sidebar {
+                width: 220px;
+            }
+
+            .channels-grid {
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            }
+        }
+
+        /* Mobile breakpoint (tablets in portrait, large phones) */
         @media (max-width: 768px) {
             body {
                 flex-direction: column;
@@ -833,35 +1299,35 @@
 
             .sidebar {
                 position: fixed;
-                left: -320px;
+                left: 0;
                 top: 0;
                 bottom: 0;
-                width: 300px;
-                transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+                width: 280px;
+                transform: translateX(-100%);
+                transition: transform var(--duration-slower) var(--ease-out);
                 z-index: 1000;
-                background: #0f172a;
+                background: var(--bg-base);
                 box-shadow: 20px 0 50px rgba(0, 0, 0, 0.8);
                 overflow-y: auto;
                 padding-top: 60px;
-                /* Space for close button */
             }
 
             .sidebar.show {
-                transform: translateX(320px);
+                transform: translateX(0);
             }
 
             .sidebar-close {
                 display: block !important;
                 position: absolute;
-                top: 15px;
-                right: 15px;
-                background: rgba(255, 255, 255, 0.05);
+                top: var(--space-4);
+                right: var(--space-4);
+                background: var(--surface-interactive);
                 border: none;
-                color: white;
-                font-size: 1.5rem;
-                width: 40px;
-                height: 40px;
-                border-radius: 50%;
+                color: var(--text-primary);
+                font-size: var(--font-size-xl);
+                width: 44px;
+                height: 44px;
+                border-radius: var(--radius-full);
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -872,9 +1338,9 @@
                 display: flex !important;
                 align-items: center;
                 justify-content: space-between;
-                padding: 12px 20px;
-                background: #1e293b;
-                border-bottom: 2px solid rgba(59, 130, 246, 0.2);
+                padding: var(--space-3) var(--space-5);
+                background: var(--bg-elevated);
+                border-bottom: 2px solid var(--accent-subtle);
                 z-index: 500;
                 flex-shrink: 0;
             }
@@ -882,11 +1348,11 @@
             .mobile-toggle {
                 background: var(--accent);
                 border: none;
-                color: white;
-                font-size: 1.1rem;
-                width: 40px;
-                height: 40px;
-                border-radius: 10px;
+                color: var(--text-primary);
+                font-size: var(--font-size-md);
+                width: 44px;
+                height: 44px;
+                border-radius: var(--radius-md);
                 cursor: pointer;
                 display: flex;
                 align-items: center;
@@ -900,22 +1366,20 @@
                 min-height: 60px;
                 max-height: 60px;
                 border-right: none;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                border-bottom: 1px solid var(--border-subtle);
                 flex-direction: row !important;
-                padding: 0 15px;
+                padding: 0 var(--space-4);
                 overflow-x: auto;
                 overflow-y: hidden;
                 white-space: nowrap;
                 align-items: center;
-                gap: 12px;
+                gap: var(--space-3);
                 -webkit-overflow-scrolling: touch;
                 scrollbar-width: none;
-                /* Firefox */
             }
 
             .categories-sidebar::-webkit-scrollbar {
                 display: none;
-                /* Chrome/Safari */
             }
 
             .categories-sidebar [style*="font-size: 0.8rem"] {
@@ -924,11 +1388,11 @@
 
             .category-item {
                 margin-bottom: 0;
-                padding: 8px 18px;
+                padding: var(--space-2) var(--space-5);
                 display: inline-block;
                 flex-shrink: 0;
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.1);
+                background: var(--surface-interactive);
+                border: 1px solid var(--border-default);
             }
 
             .category-item.active {
@@ -949,23 +1413,23 @@
             }
 
             .channels-grid {
-                padding: 15px;
+                padding: var(--space-4);
                 grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-                gap: 12px;
+                gap: var(--space-3);
             }
 
             .channel-card {
-                padding: 12px 8px;
+                padding: var(--space-3) var(--space-2);
             }
 
             .channel-logo {
                 width: 45px;
                 height: 45px;
-                margin-bottom: 8px;
+                margin-bottom: var(--space-2);
             }
 
             .channel-name {
-                font-size: 0.75rem;
+                font-size: var(--font-size-xs);
             }
 
             .sidebar-backdrop {
@@ -985,6 +1449,38 @@
             }
         }
 
+        /* Large phone breakpoint */
+        @media (max-width: 480px) {
+            .sidebar {
+                width: 100%;
+            }
+
+            .channels-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+                gap: var(--space-2);
+                padding: var(--space-3);
+            }
+
+            .channel-card {
+                padding: var(--space-2) var(--space-1);
+            }
+
+            .channel-logo {
+                width: 40px;
+                height: 40px;
+            }
+
+            .channel-name {
+                font-size: 0.65rem;
+            }
+
+            .player-container {
+                height: auto;
+                min-height: 180px;
+                aspect-ratio: 16 / 9;
+            }
+        }
+
         .mobile-header {
             display: none;
         }
@@ -996,10 +1492,25 @@
         .sidebar-close {
             display: none;
         }
+
+        /* Empty state utility */
+        .empty-state {
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .empty-state i {
+            display: block;
+            font-size: var(--font-size-3xl);
+            margin-bottom: var(--space-4);
+            opacity: 0.3;
+        }
     </style>
 </head>
 
 <body>
+
+    <a href="#main-content" class="skip-link">Skip to main content</a>
 
     <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
 
@@ -1007,8 +1518,8 @@
         <div class="logo" style="margin-bottom: 0; font-size: 1.2rem;">
             <i class="fas fa-satellite-dish"></i> STBcheck
         </div>
-        <button class="mobile-toggle" onclick="toggleSidebar()">
-            <i class="fas fa-bars"></i>
+        <button class="mobile-toggle" onclick="toggleSidebar()" aria-label="Open menu">
+            <i class="fas fa-bars" aria-hidden="true"></i>
         </button>
     </div>
 
@@ -1018,11 +1529,13 @@
     </div>
 
     <div class="sidebar">
-        <button class="sidebar-close" onclick="toggleSidebar()">
+        <button class="sidebar-close" onclick="toggleSidebar()" aria-label="Close sidebar">
             <i class="fas fa-times"></i>
         </button>
         <div class="logo"><i class="fas fa-satellite-dish"></i> STBcheck</div>
-        <textarea id="portalInput" placeholder="Paste your Portal/MAC list or a link to a website containing them here..."></textarea>
+        <label for="portalInput" class="visually-hidden">Enter portal URLs or MAC addresses</label>
+        <textarea id="portalInput" placeholder="Paste your Portal/MAC list or a link to a website containing them here..." aria-describedby="portalInputHelp"></textarea>
+        <span id="portalInputHelp" class="visually-hidden">Enter one portal URL or MAC address per line, or a URL to a page containing them</span>
         <button class="btn-check" onclick="checkPortals()">START DISCOVERY</button>
         <button class="btn-view-verified" onclick="showVerifiedModal()">
             <i class="fas fa-check-circle"></i> VERIFIED SERVERS
@@ -1037,17 +1550,26 @@
         <div
             style="font-size: 0.8rem; font-weight: 600; color: var(--accent); margin-bottom: 15px; padding-left: 15px;">
             CATEGORIES</div>
+        <div class="channel-search-container" style="padding: 0 var(--space-4) var(--space-4) var(--space-4);">
+            <div class="channel-search-wrapper" style="position: relative;">
+                <i class="fas fa-search" style="position: absolute; left: var(--space-3); top: 50%; transform: translateY(-50%); color: var(--text-secondary); font-size: var(--font-size-base); pointer-events: none;" aria-hidden="true"></i>
+                <label for="channelSearchInput" class="visually-hidden">Search channels</label>
+                <input type="text" id="channelSearchInput" placeholder="Search channels..."
+                    style="width: 100%; padding: var(--space-3) var(--space-3) var(--space-3) 35px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--surface-interactive); color: var(--text-primary); font-size: var(--font-size-base); outline: none; transition: border-color var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);">
+            </div>
+        </div>
         <div id="categoryList">
             <!-- Categories will appear here -->
         </div>
     </div>
 
-    <div class="main-content">
+    <main class="main-content" id="main-content" role="main">
         <div class="player-container">
             <video id="video" controls></video>
             <div class="player-error-overlay" id="playerErrorOverlay">
                 <button class="close-overlay"
-                    onclick="document.getElementById('playerErrorOverlay').style.display='none'">&times;</button>
+                    onclick="document.getElementById('playerErrorOverlay').style.display='none'"
+                    aria-label="Close error message"><span aria-hidden="true">&times;</span></button>
                 <div class="error-icon"><i class="fas fa-exclamation-triangle"></i></div>
                 <div class="error-title" id="playerErrorTitle">Playback Failed</div>
                 <div class="error-desc" id="playerErrorDesc">This stream format (likely HEVC/H.265) is not supported by
@@ -1059,18 +1581,18 @@
         <div class="resizer" id="resizer"></div>
 
         <div class="channels-grid" id="channelsGrid">
-            <div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">
-                <i class="fas fa-tv fa-3x" style="display: block; margin-bottom: 15px; opacity: 0.3;"></i>
+            <div class="empty-state" style="grid-column: 1/-1; text-align: center; color: var(--text-secondary); margin-top: var(--space-12);">
+                <i class="fas fa-tv" style="display: block; font-size: var(--font-size-3xl); margin-bottom: var(--space-4); opacity: 0.3;"></i>
                 Select a portal to view channels
             </div>
         </div>
-    </div>
+    </main>
 
-    <div class="modal-overlay" id="verifiedModal">
+    <div class="modal-overlay" id="verifiedModal" role="dialog" aria-modal="true" aria-labelledby="verifiedModalTitle">
         <div class="modal-content">
             <div class="modal-header">
-                <div class="modal-title">Verified Servers</div>
-                <button class="close-modal" onclick="closeModal('verifiedModal')">&times;</button>
+                <div class="modal-title" id="verifiedModalTitle">Verified Servers</div>
+                <button class="close-modal" onclick="closeModal('verifiedModal')" aria-label="Close verified servers modal"><span aria-hidden="true">&times;</span></button>
             </div>
             <div class="verified-list" id="verifiedList">
                 <!-- Verified servers will appear here -->
@@ -1079,22 +1601,140 @@
     </div>
 
     <!-- Stylized Alert Modal -->
-    <div class="modal-overlay" id="alertModal" style="display: none; z-index: 3000;">
+    <div class="modal-overlay" id="alertModal" style="display: none; z-index: 3000;" role="dialog" aria-modal="true" aria-labelledby="alertTitle" aria-describedby="alertMessage">
         <div class="alert-modal-content">
             <div class="alert-icon">
-                <i class="fas fa-info-circle"></i>
+                <i class="fas fa-info-circle" aria-hidden="true"></i>
             </div>
+            <div class="modal-title" id="alertTitle" style="display:none;">Alert</div>
             <div class="alert-message" id="alertMessage">Message goes here</div>
-            <button class="btn-alert-ok" onclick="closeModal('alertModal')">GOT IT</button>
+            <button class="btn-alert-ok" onclick="closeModal('alertModal')" aria-label="Close alert">GOT IT</button>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <!-- Confirmation Modal -->
+    <div class="modal-overlay" id="confirmModal" style="display: none; z-index: 3000;" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+        <div class="alert-modal-content">
+            <div class="alert-icon" style="color: var(--color-error);">
+                <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+            </div>
+            <div class="modal-title" id="confirmTitle" style="display:none;">Confirm Action</div>
+            <div class="alert-message" id="confirmMessage">Are you sure?</div>
+            <div class="confirm-buttons">
+                <button class="btn-confirm-cancel" onclick="closeModal('confirmModal')" aria-label="Cancel and close">CANCEL</button>
+                <button class="btn-confirm-delete" id="confirmDeleteBtn" aria-label="Confirm deletion">DELETE</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.min.js"></script>
     <script>
+        // Hardening: i18n Support - Internationalization utilities
+        const i18n = {
+            // Detect user's language
+            locale: navigator.language || navigator.userLanguage || 'en',
+            
+            // Format date according to locale
+            formatDate: (date) => {
+                return new Intl.DateTimeFormat(i18n.locale).format(date);
+            },
+            
+            // Format number according to locale
+            formatNumber: (num) => {
+                return new Intl.NumberFormat(i18n.locale).format(num);
+            },
+            
+            // Check if text direction is RTL
+            isRTL: () => {
+                const rtlLocales = ['ar', 'he', 'fa', 'ur', 'yi', 'ps'];
+                return rtlLocales.some(locale => i18n.locale.startsWith(locale));
+            },
+            
+            // Truncate text with ellipsis for different lengths
+            truncate: (str, maxLength = 50) => {
+                if (!str) return '';
+                if (str.length <= maxLength) return str;
+                return str.substring(0, maxLength - 3) + '...';
+            }
+        };
+
+        // Hardening: Network status detection
+        const networkStatus = {
+            isOnline: () => navigator.onLine,
+            
+            // Monitor online/offline status
+            init: () => {
+                window.addEventListener('online', () => {
+                    showAlert('Connection restored. You are back online.');
+                });
+                
+                window.addEventListener('offline', () => {
+                    showAlert('You are now offline. Some features may be unavailable.');
+                });
+            }
+        };
+
+        // Hardening: Input validation utilities
+        const inputValidator = {
+            // Sanitize input to prevent XSS
+            sanitize: (str) => {
+                if (!str) return '';
+                return String(str)
+                    .replace(/[&<>"']/g, '')
+                    .trim();
+            },
+            
+            // Validate URL format
+            isValidURL: (str) => {
+                try {
+                    new URL(str);
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            },
+            
+            // Validate MAC address format
+            isValidMAC: (str) => {
+                const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+                return macRegex.test(str);
+            },
+            
+            // Check input length constraints
+            isWithinLength: (str, min = 1, max = 1000) => {
+                return str && str.length >= min && str.length <= max;
+            }
+        };
+
+        // Hardening: Retry utility for failed operations
+        const retryOperation = async (fn, maxRetries = 3, delay = 1000) => {
+            let lastError;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    return await fn();
+                } catch (error) {
+                    lastError = error;
+                    if (i < maxRetries - 1) {
+                        await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+                    }
+                }
+            }
+            throw lastError;
+        };
+
+        // Debounce utility for performance optimization
+        function debounce(fn, delay) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
+
         let currentPortals = [];
         let activePortal = null;
         let activeCategory = 'all';
+        let channelSearchQuery = '';
         let hls = null;
         let mpegPlayer = null;
         let verifiedServers = [];
@@ -1105,6 +1745,23 @@
                 '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
             })[m]);
         };
+
+        // Sanitize HTML using DOMPurify (if available) or fallback to textContent
+        function safeInnerHTML(element, html) {
+            if (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) {
+                element.innerHTML = DOMPurify.sanitize(html, { 
+                    ALLOWED_TAGS: ['div', 'span', 'button', 'i', 'br', 'strong', 'em'],
+                    ALLOWED_ATTR: ['onclick', 'title', 'class', 'aria-label', 'type', 'style']
+                });
+            } else {
+                // Fallback: use textContent to avoid XSS
+                element.textContent = '';
+                // If html contains formatting, try to preserve some structure
+                const temp = document.createElement('div');
+                temp.textContent = html;
+                element.appendChild(temp);
+            }
+        }
 
         // Simple IndexedDB wrapper for larger data (channels can exceed 5MB localStorage limit)
         const dbPromise = new Promise((resolve, reject) => {
@@ -1245,17 +1902,135 @@
         }
 
         window.addEventListener('DOMContentLoaded', async () => {
+            // Hardening: Initialize network status monitoring
+            networkStatus.init();
+            
             await fetchVerified();
             await loadState();
 
-            document.getElementById('portalInput').addEventListener('input', () => {
+            // Portal input with debounced localStorage save (500ms)
+            const debouncedSavePortalInput = debounce(() => {
                 localStorage.setItem('stb_portalInput', document.getElementById('portalInput').value);
+            }, 500);
+            document.getElementById('portalInput').addEventListener('input', debouncedSavePortalInput);
+
+            // Channel search input with debounced render (150ms)
+            const debouncedChannelSearch = debounce((value) => {
+                channelSearchQuery = value;
+                renderChannelsGrid();
+            }, 150);
+            document.getElementById('channelSearchInput').addEventListener('input', (e) => {
+                debouncedChannelSearch(e.target.value);
             });
+
+            // Attach delete function to the confirm button
+            document.getElementById('confirmDeleteBtn').onclick = deleteVerifiedServer;
         });
 
         function showAlert(msg) {
             document.getElementById('alertMessage').innerText = msg;
-            document.getElementById('alertModal').style.display = 'flex';
+            openModal('alertModal');
+        }
+
+        function showLoader(show, message = 'Loading...') {
+            const loader = document.getElementById('loader');
+            const loaderText = document.getElementById('loader-text');
+            if (show) {
+                loaderText.textContent = message;
+                loader.style.display = 'flex';
+            } else {
+                loader.style.display = 'none';
+            }
+        }
+
+        function openModal(modalId) {
+            document.getElementById(modalId).style.display = 'flex';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function showVerifiedModal() {
+            const verifiedList = document.getElementById('verifiedList');
+            verifiedList.innerHTML = '';
+
+            if (verifiedServers.length === 0) {
+                verifiedList.innerHTML = `
+                    <div class="empty-state" style="padding: var(--space-10) var(--space-5);">
+                        <i class="fas fa-check-circle"></i>
+                        No verified servers yet. Add some from the portal list.
+                    </div>
+                `;
+            } else {
+                verifiedServers.forEach((server, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'verified-item';
+                    item.innerHTML = `
+                        <div class="verified-info">
+                            <div class="verified-name">${escapeHTML(server.url)}</div>
+                            <div class="verified-mac">${escapeHTML(server.mac)}</div>
+                        </div>
+                        <div class="verified-actions">
+                            <button class="btn-action" onclick="loadVerifiedServer(${index})" title="Load this server" aria-label="Load this server">
+                                <i class="fas fa-play"></i>
+                            </button>
+                            <button class="btn-action" onclick="copyVerifiedUrl(${index})" title="Copy URL" aria-label="Copy server URL">
+                                <i class="fas fa-link"></i>
+                            </button>
+                            <button class="btn-action" onclick="confirmDeleteServer(${index})" title="Delete" aria-label="Delete server">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                    verifiedList.appendChild(item);
+                });
+            }
+
+            openModal('verifiedModal');
+        }
+
+        function loadVerifiedServer(index) {
+            const server = verifiedServers[index];
+            if (server) {
+                document.getElementById('portalInput').value = `${server.url}\n${server.mac}`;
+                closeModal('verifiedModal');
+                checkPortals();
+            }
+        }
+
+        function copyVerifiedUrl(index) {
+            const server = verifiedServers[index];
+            if (server) {
+                navigator.clipboard.writeText(server.url);
+                showAlert('URL copied to clipboard!');
+            }
+        }
+
+        // Store the index of the server to be deleted
+        let serverToDeleteIndex = null;
+
+        function confirmDeleteServer(index) {
+            serverToDeleteIndex = index;
+            const server = verifiedServers[index];
+            const message = `Are you sure you want to remove this server from your verified list?\n\n${server.url}\n${server.mac}`;
+            document.getElementById('confirmMessage').innerText = message;
+            openModal('confirmModal');
+        }
+
+        async function deleteVerifiedServer() {
+            if (serverToDeleteIndex === null) return;
+
+            try {
+                verifiedServers.splice(serverToDeleteIndex, 1);
+                await dbSet('verifiedServers', verifiedServers);
+                serverToDeleteIndex = null;
+                closeModal('confirmModal');
+                showVerifiedModal(); // Refresh the list
+            } catch (e) {
+                console.error("Failed to delete verified server:", e);
+                showAlert("Error removing server from verified list");
+            }
         }
 
         async function fetchVerified() {
@@ -1269,352 +2044,298 @@
             }
         }
 
+        // Hardening: Prevent double submission
+        let isRequestInProgress = false;
+
+        const CHANNELS_PER_PAGE = 50;
+        let displayedCount = CHANNELS_PER_PAGE;
+        let filteredChannels = [];
+
         async function checkPortals() {
+            // Hardening: Prevent double submission
+            if (isRequestInProgress) {
+                showAlert('A request is already in progress. Please wait.');
+                return;
+            }
+            
             const text = document.getElementById('portalInput').value;
-            if (!text) return;
+            
+            // Hardening: Validate input before processing
+            if (!text) {
+                showAlert('Please enter a portal URL or MAC address to check.');
+                return;
+            }
+            
+            // Hardening: Check network status before making request
+            if (!networkStatus.isOnline()) {
+                showAlert('You are currently offline. Please check your internet connection and try again.');
+                return;
+            }
+
+            isRequestInProgress = true;
+            showLoader(true, 'Discovering portals...');
 
             // Clear previous results
             currentPortals = [];
             activePortal = null;
             activeCategory = 'all';
+            channelSearchQuery = '';
+            displayedCount = CHANNELS_PER_PAGE;
+            document.getElementById('channelSearchInput').value = '';
             document.getElementById('portalList').innerHTML = '';
             document.getElementById('categoriesSidebar').style.display = 'none';
             document.getElementById('categoryList').innerHTML = '';
             document.getElementById('channelsGrid').innerHTML = `
-                <div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">
-                    <i class="fas fa-tv fa-3x" style="display: block; margin-bottom: 15px; opacity: 0.3;"></i>
-                    Select a portal to view channels
+                <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
+                    <i class="fas fa-tv"></i>
+                    Discovering portals...
                 </div>
             `;
-            stopPlayers();
-            document.getElementById('now-playing').style.display = 'none';
-            await clearPortalChannels();
-            await saveState();
 
-            showLoader(true, "Identifying servers...");
             try {
                 const response = await fetch('/api/check', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text })
+                    body: JSON.stringify({ text: text })
                 });
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                let results = [];
-                let buffer = '';
+                let buffer = '';  // Buffer for incomplete SSE lines
 
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
 
-                    buffer += decoder.decode(value, { stream: true });
+                    const chunk = decoder.decode(value);
+                    buffer += chunk;
 
-                    // SSE events are separated by \n\n
-                    const events = buffer.split('\n\n');
+                    // Process complete lines (ending with newline)
+                    // But keep buffering if the JSON might be incomplete
+                    let newlineIndex;
+                    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+                        const line = buffer.slice(0, newlineIndex);
+                        buffer = buffer.slice(newlineIndex + 1);
 
-                    // Keep the last partial event in the buffer
-                    buffer = events.pop();
+                        if (!line.startsWith('data: ')) continue;
 
-                    for (const event of events) {
-                        const line = event.trim();
-                        if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.substring(6));
-                                if (data.type === 'status') {
-                                    showLoader(true, data.message);
-                                } else if (data.type === 'error') {
-                                    showAlert(data.message);
-                                } else if (data.type === 'start') {
-                                    showLoader(true, `Found ${data.total} servers. Starting discovery...`);
-                                } else if (data.type === 'result') {
-                                    const result = data.result;
-                                    const { channels, ...metadata } = result;
-
-                                    // Store channels in IDB, keep only metadata in RAM
-                                    await savePortalChannels(metadata.url, metadata.mac, channels);
-
-                                    results.push(metadata);
-                                    currentPortals = results;
+                        // Try to parse, if it fails, the JSON is incomplete - rebuffer
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.type === 'status') {
+                                // Update status message
+                                document.getElementById('channelsGrid').innerHTML = `
+                                    <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
+                                        <i class="fas fa-spinner fa-spin"></i>
+                                        ${escapeHTML(data.message)}
+                                    </div>
+                                `;
+                            } else if (data.type === 'result') {
+                                // Skip portals with no channels to avoid empty server entries
+                                if (data.result && (data.result.channel_count === 0 || (Array.isArray(data.result.channels) && data.result.channels.length === 0))) {
+                                    console.log(`Skipping zero-channel portal: ${data.result.url}`);
+                                } else {
+                                    currentPortals.push(data.result);
+                                    // Persist channels to IndexedDB for faster loading on portal switch
+                                    if (data.result && data.result.channels) {
+                                        savePortalChannels(data.result.url, data.result.mac, data.result.channels).catch(e => {
+                                            console.warn("Failed to cache channels:", e);
+                                        });
+                                    }
                                     renderPortalList();
-                                } else if (data.type === 'progress') {
-                                    showLoader(true, `Discovery in progress: ${data.current} / ${data.total} servers processed`);
-                                } else if (data.type === 'complete') {
-                                    // All results received
                                 }
-                            } catch (e) {
-                                console.error("Error parsing SSE JSON:", e, "Line:", line);
+                            } else if (data.type === 'complete') {
+                                if (currentPortals.length === 0) {
+                                    document.getElementById('channelsGrid').innerHTML = `
+                                        <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            No working portals found. Check your input and try again.
+                                        </div>
+                                    `;
+                                }
                             }
+                        } catch (e) {
+                            // JSON parse failed - this might be an incomplete line
+                            // Put it back in the buffer and wait for more data
+                            buffer = line + '\n' + buffer;
+                            break;
                         }
                     }
                 }
-
-                currentPortals = results;
-                await fetchVerified();
-                // saveState() is not strictly needed here as we updated currentPortals/channels as they came in
-                // but we call it to ensure small metadata (activePortal) is synced
-                await saveState();
-                renderPortalList();
-                if (currentPortals.length === 0) {
-                    showAlert("No active portals found in the provided list.");
-                }
             } catch (e) {
-                console.error("Discovery failed:", e);
-                showAlert("Error connecting to backend or processing list");
+                console.error('Error checking portals:', e);
+                showAlert('Error connecting to server. Please try again.');
             } finally {
+                isRequestInProgress = false;
                 showLoader(false);
             }
         }
 
-        function showLoader(show, text = "") {
-            document.getElementById('loader').style.display = show ? 'flex' : 'none';
-            document.getElementById('loader-text').innerText = text;
-        }
-
         function renderPortalList() {
-            const list = document.getElementById('portalList');
-            list.innerHTML = '';
-            currentPortals.forEach((p, idx) => {
-                const isVerified = verifiedServers.some(v => v.url === p.url && v.mac === p.mac);
-                const isEmpty = (p.channel_count === 0);
-                const div = document.createElement('div');
-                div.className = `portal-item ${activePortal === idx ? 'active' : ''} ${isEmpty ? 'empty' : ''}`;
-                div.onclick = (e) => {
-                    if (e.target.closest('.portal-actions')) return;
-                    selectPortal(idx);
-                };
-                const safeUrl = escapeHTML(p.url);
-                const safeMac = escapeHTML(p.mac);
-                const safeExpiry = escapeHTML(p.expiry || 'N/A');
+            const portalList = document.getElementById('portalList');
+            portalList.innerHTML = '';
 
-                div.innerHTML = `
+            // Filter out any portals with zero channels as a safety net
+            const validPortals = currentPortals.filter(p =>
+                p && (p.channel_count > 0 || (Array.isArray(p.channels) && p.channels.length > 0))
+            );
+
+            validPortals.forEach((portal, index) => {
+                const isActive = index === activePortal;
+                const item = document.createElement('div');
+                item.className = `portal-item ${isActive ? 'active' : ''}`;
+                item.onclick = () => selectPortal(index);
+
+                item.innerHTML = `
                     <div class="portal-content-main">
-                        <div class="portal-name" title="${safeUrl}">${safeUrl}</div>
+                        <div class="portal-name">${escapeHTML(portal.url)}</div>
                         <div class="portal-stats">
-                            <i class="fas fa-microchip" style="font-size: 0.7rem; opacity: 0.6;"></i> ${safeMac} <br>
-                            <i class="fas fa-tv" style="font-size: 0.7rem; opacity: 0.6;"></i> ${p.channel_count} Ch • 
-                            <i class="fas fa-calendar-alt" style="font-size: 0.7rem; opacity: 0.6;"></i> ${safeExpiry}
+                            <i class="fas fa-tv"></i> ${portal.channel_count || 0} channels
+                            ${portal.expiry ? ` • ${escapeHTML(portal.expiry)}` : ''}
                         </div>
                     </div>
-                    ${!isEmpty ? `
                     <div class="portal-actions">
-                        <button class="btn-action" onclick="copyIndividualValue('${safeUrl.replace(/'/g, "\\'")}', this)" title="Copy URL">
+                        <button class="btn-action" title="Copy URL" aria-label="Copy portal URL" onclick="event.stopPropagation(); copyPortalUrl(${index})">
                             <i class="fas fa-link"></i>
                         </button>
-                        <button class="btn-action" onclick="copyIndividualValue('${safeMac.replace(/'/g, "\\'")}', this)" title="Copy MAC Address">
-                            <i class="fas fa-microchip"></i>
+                        <button class="btn-action" title="Copy MAC" aria-label="Copy portal MAC address" onclick="event.stopPropagation(); copyPortalMac(${index})">
+                            <i class="fas fa-mobile-alt"></i>
                         </button>
-                        <button class="btn-verify ${isVerified ? 'is-verified' : ''}" onclick="verifyServer(${idx})" title="${isVerified ? 'Unmark as verified' : 'Mark as verified'}">
-                            <i class="fas ${isVerified ? 'fa-check-double' : 'fa-check'}"></i>
+                        <button class="btn-verify" title="Add to verified" aria-label="Add server to verified list" onclick="event.stopPropagation(); verifyServer(${index})">
+                            <i class="fas fa-check"></i>
                         </button>
                     </div>
-                    ` : ''}
                 `;
-                list.appendChild(div);
+                portalList.appendChild(item);
             });
-        }
 
-        async function verifyServer(idx) {
-            const p = currentPortals[idx];
-            try {
-                const existingIdx = verifiedServers.findIndex(v => v.url === p.url && v.mac === p.mac);
-
-                if (existingIdx !== -1) {
-                    verifiedServers.splice(existingIdx, 1);
-                } else {
-                    verifiedServers.push({ url: p.url, mac: p.mac });
-                }
-
-                await dbSet('verifiedServers', verifiedServers);
-                renderPortalList();
-            } catch (e) {
-                showAlert("Error updating verified list");
+            if (currentPortals.length > 0 && activePortal === null) {
+                selectPortal(0);
             }
-        }
-
-        async function showVerifiedModal() {
-            const modal = document.getElementById('verifiedModal');
-            const list = document.getElementById('verifiedList');
-            modal.style.display = 'flex';
-            list.innerHTML = '';
-
-            if (verifiedServers.length === 0) {
-                list.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-dim);">No verified servers yet.</div>';
-                return;
-            }
-
-            verifiedServers.forEach((v, idx) => {
-                const div = document.createElement('div');
-                div.className = 'verified-item';
-                const safeUrl = escapeHTML(v.url);
-                const safeMac = escapeHTML(v.mac);
-                div.innerHTML = `
-                    <div class="verified-info">
-                        <div class="verified-url">${safeUrl}</div>
-                        <div class="verified-mac">${safeMac}</div>
-                    </div>
-                    <button class="btn-copy" onclick="copyToClipboard('${safeUrl.replace(/'/g, "\\'")}', '${safeMac.replace(/'/g, "\\'")}', this)" title="Copy Portal Detail">
-                        <i class="fas fa-copy"></i>
-                    </button>
-                `;
-                list.appendChild(div);
-            });
-        }
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
-        }
-
-        function copyToClipboard(url, mac, btn) {
-            const text = `Portal: ${url}\nMAC: ${mac}`;
-            copyIndividualValue(text, btn);
-        }
-
-        function copyIndividualValue(text, btn) {
-            navigator.clipboard.writeText(text).then(() => {
-                const icon = btn.querySelector('i');
-                const oldClass = icon.className;
-                icon.className = 'fas fa-check';
-                btn.classList.add('copied');
-
-                setTimeout(() => {
-                    icon.className = oldClass;
-                    btn.classList.remove('copied');
-                }, 2000);
-            }).catch(err => {
-                console.error('Could not copy text: ', err);
-            });
-        }
-
-        // Close modal when clicking outside
-        window.onclick = function (event) {
-            if (event.target.classList.contains('modal-overlay')) {
-                event.target.style.display = 'none';
-            }
-        }
-
-        async function selectPortal(idx) {
-            activePortal = idx;
-            activeCategory = 'all';
-
-            const p = currentPortals[activePortal];
-
-            // Load channels from IndexedDB if not already in RAM for this portal
-            if (!p.channels) {
-                showLoader(true, "Loading channels...");
-                try {
-                    p.channels = await getPortalChannels(p.url, p.mac);
-                } catch (e) {
-                    console.error("Failed to load channels:", e);
-                    p.channels = [];
-                } finally {
-                    showLoader(false);
-                }
-            }
-
-            document.getElementById('categoriesSidebar').style.display = 'flex';
-
-            await saveState();
-            renderPortalList();
-            renderCategories();
-            renderChannelsGrid();
         }
 
         function renderCategories() {
-            const list = document.getElementById('categoryList');
-            list.innerHTML = '';
-            const p = currentPortals[activePortal];
+            const categoryList = document.getElementById('categoryList');
+            categoryList.innerHTML = '';
 
-            if (!p.categories || !Array.isArray(p.categories) || p.categories.length === 0) {
-                list.innerHTML = '<div style="padding: 15px; font-size: 0.8rem; color: var(--text-dim);">No categories found.</div>';
+            if (!currentPortals[activePortal]) {
+                // No active portal or it has no channels - show all option only
+                document.getElementById('categoriesSidebar').style.display = 'none';
                 return;
             }
 
-            // All channels option
-            const allDiv = document.createElement('div');
-            allDiv.className = `category-item ${activeCategory === 'all' ? 'active' : ''}`;
-            allDiv.innerText = `All Channels (${p.channels.length})`;
-            allDiv.onclick = () => selectCategory('all');
-            list.appendChild(allDiv);
+            const portal = currentPortals[activePortal];
+            const channels = portal.channels || [];
+            const categories = portal.categories || [];
+            const allItem = document.createElement('div');
+            allItem.className = `category-item ${activeCategory === 'all' ? 'active' : ''}`;
+            allItem.onclick = () => selectCategory('all');
+            allItem.innerHTML = `<i class="fas fa-border-all"></i> All Channels`;
+            categoryList.appendChild(allItem);
 
-            p.categories.forEach(cat => {
-                const catId = cat.id || cat.value;
-                const catTitle = cat.title || cat.name || cat.label;
-
-                if (!catId || !catTitle) return;
-
-                const count = p.channels.filter(ch => String(ch.category_id) === String(catId)).length;
-                if (count === 0) return; // Skip empty categories
-
-                const div = document.createElement('div');
-                const safeTitle = escapeHTML(catTitle);
-                div.className = `category-item ${activeCategory == catId ? 'active' : ''}`;
-                div.innerText = `${safeTitle} (${count})`;
-                div.onclick = () => selectCategory(catId);
-                list.appendChild(div);
+            categories.forEach(cat => {
+                const item = document.createElement('div');
+                item.className = `category-item ${activeCategory === cat.id ? 'active' : ''}`;
+                item.onclick = () => selectCategory(cat.id);
+                item.innerHTML = `<i class="fas fa-tag"></i> ${escapeHTML(cat.title)}`;
+                categoryList.appendChild(item);
             });
+
+            document.getElementById('categoriesSidebar').style.display = 'flex';
         }
 
-        function selectCategory(catId) {
-            activeCategory = catId;
-            saveState();
-            renderCategories();
-
+        function renderChannelsGrid(append = false) {
             const grid = document.getElementById('channelsGrid');
-            grid.classList.add('loading');
-
-            setTimeout(() => {
-                renderChannelsGrid();
-                grid.classList.remove('loading');
-            }, 200);
-        }
-
-        const CHANNELS_PER_PAGE = 60;
-        let displayedCount = CHANNELS_PER_PAGE;
-
-        function renderChannelsGrid(loadMore = false) {
-            const grid = document.getElementById('channelsGrid');
-            const p = currentPortals[activePortal];
-
-            if (!loadMore) {
+            
+            if (!append) {
                 grid.innerHTML = '';
                 displayedCount = CHANNELS_PER_PAGE;
             }
 
-            if (!p.channels || p.channels.length === 0) {
-                grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">No channels found.</div>';
-                return;
-            }
+            if (!currentPortals[activePortal]) return;
 
-            const filteredChannels = activeCategory === 'all'
-                ? p.channels
-                : p.channels.filter(ch => String(ch.category_id) === String(activeCategory));
-
-            const toDisplay = filteredChannels.slice(loadMore ? displayedCount - CHANNELS_PER_PAGE : 0, displayedCount);
-
-            toDisplay.forEach((ch, i) => {
-                const div = document.createElement('div');
-                div.className = 'channel-card';
-                div.onclick = () => playChannel(ch);
-                const logo = ch.logo && ch.logo !== 'null' ? ch.logo : 'https://cdn-icons-png.flaticon.com/512/3135/3135673.png';
-                const safeName = escapeHTML(ch.name);
-                div.innerHTML = `
-                    <img src="${logo}" class="channel-logo" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3135/3135673.png'">
-                    <div class="channel-name" title="${safeName}">${safeName}</div>
-                `;
-                grid.appendChild(div);
+            const channels = currentPortals[activePortal].channels || [];
+            
+            // Filter channels by category and search
+            filteredChannels = channels.filter(ch => {
+                if (activeCategory !== 'all' && ch.category_id !== activeCategory) {
+                    return false;
+                }
+                if (channelSearchQuery && !ch.name.toLowerCase().includes(channelSearchQuery.toLowerCase())) {
+                    return false;
+                }
+                return true;
             });
 
-            // Add "Load More" button if there are more channels
+            const toShow = filteredChannels.slice(append ? displayedCount - CHANNELS_PER_PAGE : 0, displayedCount);
+            
+            if (!append) {
+                grid.innerHTML = '';
+            }
+
+            toShow.forEach((ch, i) => {
+                const card = document.createElement('div');
+                card.className = 'channel-card';
+                card.style.animationDelay = `${i * 30}ms`;
+                card.onclick = () => playChannel(ch);
+
+                if (ch.logo) {
+                    // Use lazy loading with placeholder - load logo only when card is visible
+                    card.innerHTML = `
+                        <div class="channel-logo channel-logo-placeholder" data-src="${ch.logo}" alt="${escapeHTML(ch.name)}">
+                            <i class="fas fa-spinner fa-spin" style="opacity: 0.3;"></i>
+                        </div>
+                        <div class="channel-name">${escapeHTML(ch.name)}</div>
+                    `;
+                } else {
+                    card.innerHTML = `
+                        <div class="channel-logo"><i class="fas fa-tv"></i></div>
+                        <div class="channel-name">${escapeHTML(ch.name)}</div>
+                    `;
+                }
+                grid.appendChild(card);
+            });
+
+            // Lazy load logos using Intersection Observer
+            const logoObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const placeholder = entry.target;
+                        const imgSrc = placeholder.getAttribute('data-src');
+                        if (imgSrc) {
+                            const img = document.createElement('img');
+                            img.src = imgSrc;
+                            img.className = 'channel-logo';
+                            img.alt = placeholder.getAttribute('alt') || '';
+                            img.onerror = () => {
+                                placeholder.innerHTML = '<i class="fas fa-tv"></i>';
+                            };
+                            img.onload = () => {
+                                placeholder.innerHTML = '';
+                                placeholder.appendChild(img);
+                            };
+                            placeholder.removeAttribute('data-src');
+                        }
+                        logoObserver.unobserve(placeholder);
+                    }
+                });
+            }, { rootMargin: '100px' });
+
+            // Observe all placeholder logos
+            document.querySelectorAll('.channel-logo-placeholder').forEach(el => {
+                logoObserver.observe(el);
+            });
+
+            // Add Load More button
             const existingBtn = document.getElementById('loadMoreBtn');
             if (existingBtn) existingBtn.remove();
 
             if (displayedCount < filteredChannels.length) {
                 const btn = document.createElement('button');
                 btn.id = 'loadMoreBtn';
-                btn.className = 'btn-check';
+                btn.className = 'btn-primary';
                 btn.style.gridColumn = '1 / -1';
-                btn.style.margin = '20px auto';
+                btn.style.margin = 'var(--space-5) auto';
                 btn.style.width = '200px';
                 btn.innerText = `Load More (${filteredChannels.length - displayedCount} left)`;
                 btn.onclick = () => {
@@ -1624,8 +2345,86 @@
                 grid.appendChild(btn);
             }
 
-            if (filteredChannels.length === 0) {
-                grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); margin-top: 50px;">No channels in this category.</div>';
+            if (filteredChannels.length === 0 && !append) {
+                const message = channelSearchQuery
+                    ? `No channels found matching "${escapeHTML(channelSearchQuery)}"`
+                    : 'No channels in this category.';
+                grid.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
+                        <i class="fas fa-search"></i>
+                        ${message}
+                    </div>
+                `;
+            }
+        }
+
+        async function selectPortal(index) {
+            // Bounds check: if index is invalid, reset to first portal
+            if (index < 0 || index >= currentPortals.length) {
+                console.warn(`selectPortal: invalid index ${index}, resetting to 0 (current length: ${currentPortals.length})`);
+                index = 0;
+            }
+
+            // Ensure activePortal stays within bounds
+            if (index >= currentPortals.length && currentPortals.length > 0) {
+                index = currentPortals.length - 1;
+            }
+
+            const portal = currentPortals[index];
+
+            // If portal has no channels, try to load from IndexedDB
+            if (!portal.channels || (Array.isArray(portal.channels) && portal.channels.length === 0)) {
+                showLoader(true, "Loading channels...");
+                try {
+                    const channels = await getPortalChannels(portal.url, portal.mac);
+                    if (channels && channels.length > 0) {
+                        portal.channels = channels;
+                    }
+                } catch (e) {
+                    console.error("Failed to load channels from cache:", e);
+                }
+                showLoader(false);
+            }
+
+            activePortal = index;
+            activeCategory = 'all';
+            channelSearchQuery = '';
+            document.getElementById('channelSearchInput').value = '';
+            renderPortalList();
+            renderCategories();
+            renderChannelsGrid();
+            saveState();
+        }
+
+        function selectCategory(categoryId) {
+            activeCategory = categoryId;
+            renderCategories();
+            renderChannelsGrid();
+            saveState();
+        }
+
+        function copyPortalUrl(index) {
+            const portal = currentPortals[index];
+            if (portal) {
+                navigator.clipboard.writeText(portal.url);
+                showAlert('Portal URL copied to clipboard!');
+            }
+        }
+
+        function copyPortalMac(index) {
+            const portal = currentPortals[index];
+            if (portal) {
+                navigator.clipboard.writeText(portal.mac);
+                showAlert('Portal MAC copied to clipboard!');
+            }
+        }
+
+        function verifyServer(index) {
+            const portal = currentPortals[index];
+            if (portal && !verifiedServers.find(v => v.url === portal.url)) {
+                verifiedServers.push({ url: portal.url, mac: portal.mac });
+                dbSet('verifiedServers', verifiedServers);
+                showAlert('Server added to verified list!');
             }
         }
 
@@ -1723,20 +2522,43 @@
 
             document.getElementById('ch-name-display').innerText = name + " (Initializing...)";
 
-            // Better stream type detection by checking the target parameter
+            // Stream type detection - check multiple indicators
             let isHls = false;
+            let streamType = 'mpegts';  // Default for IPTV
             try {
                 const urlObj = new URL(proxyUrl, window.location.origin);
                 const target = urlObj.searchParams.get('target');
                 if (target) {
                     const decodedTarget = atob(target).toLowerCase();
+                    // HLS detection
                     if (decodedTarget.includes('.m3u8')) {
                         isHls = true;
+                        streamType = 'hls';
+                    }
+                    // Other format hints
+                    else if (decodedTarget.includes('.mp4')) {
+                        streamType = 'mp4';
+                    } else if (decodedTarget.includes('.webm')) {
+                        streamType = 'webm';
+                    } else if (decodedTarget.includes('.mkv')) {
+                        streamType = 'mkv';
                     }
                 }
+                // Also check proxy URL itself
+                const proxyLower = proxyUrl.toLowerCase();
+                if (proxyLower.includes('.m3u8')) {
+                    isHls = true;
+                    streamType = 'hls';
+                }
             } catch (e) {
-                if (proxyUrl.toLowerCase().includes('.m3u8')) isHls = true;
+                // Fallback to URL-based detection
+                if (proxyUrl.toLowerCase().includes('.m3u8')) {
+                    isHls = true;
+                    streamType = 'hls';
+                }
             }
+
+            console.log(`Stream detection: ${name} -> ${streamType}${isHls ? ' (HLS)' : ' (MPEG-TS/other)'}`);
 
             if (isHls) {
                 console.log("Detected HLS stream:", name);
@@ -1762,148 +2584,250 @@
                 }
             } else {
                 console.log("Detected MPEG-TS stream:", name);
-                // MPEG-TS via mpegts.js
-                const absoluteUrl = proxyUrl; // For scope consistency
-                if (mpegts.getFeatureList().mseLivePlayback) {
-                    // Delay creating new player to allow old player cleanup to complete
-                    setTimeout(() => {
-                        if (!video.isConnected) return; // Exit if video element was removed
-                        
-                        mpegPlayer = mpegts.createPlayer({
-                            type: 'mpegts',
-                            isLive: true,
-                            url: proxyUrl
-                        }, {
-                            enableWorker: false,
-                            lazyLoadMaxDuration: 3 * 60,
-                            seekType: 'range',
-                            enableStashBuffer: true,
-                            stashInitialSize: 128 * 1024,
-                        });
-
-                        // Wrap player methods to suppress SourceBuffer cleanup errors
-                        const originalAttach = mpegPlayer.attachMediaElement.bind(mpegPlayer);
-                        const originalLoad = mpegPlayer.load.bind(mpegPlayer);
-                        const originalPlay = mpegPlayer.play.bind(mpegPlayer);
-                        
-                        mpegPlayer.attachMediaElement = function(...args) {
-                            try {
-                                return originalAttach(...args);
-                            } catch (e) {
-                                // Suppress SourceBuffer errors during attach
-                                if (e && e.name === 'InvalidStateError') return;
-                                throw e;
-                            }
-                        };
-                        
-                        mpegPlayer.load = function(...args) {
-                            try {
-                                return originalLoad(...args);
-                            } catch (e) {
-                                // Suppress SourceBuffer errors during load
-                                if (e && e.name === 'InvalidStateError') return;
-                                throw e;
-                            }
-                        };
-                        
-                        mpegPlayer.play = function(...args) {
-                            return originalPlay(...args).catch(e => {
-                                // Suppress SourceBuffer errors during play, re-throw others
-                                if (e && e.name === 'InvalidStateError') {
-                                    return Promise.resolve();
-                                }
-                                return Promise.reject(e);
-                            });
-                        };
-
-                        try {
-                            mpegPlayer.attachMediaElement(video);
-                            mpegPlayer.load();
-                        } catch (e) {
-                            // If attach/load fails due to cleanup race, ignore
-                            if (e && e.name !== 'InvalidStateError') {
-                                throw e;
-                            }
+                // Multi-strategy MPEG-TS playback with fallbacks
+                const absoluteUrl = proxyUrl;
+                
+                // Strategy 1: Enhanced mpegts.js with MSE
+                function tryMpegtsPlayer() {
+                    return new Promise((resolve) => {
+                        if (!mpegts.getFeatureList().mseLivePlayback) {
+                            resolve({ success: false, reason: 'MSE not supported' });
+                            return;
                         }
 
-                        const handlePlaybackError = (error, detail, info) => {
-                            const errorMsg_raw = (error && error.message) ? error.message : (detail || "Unknown");
-                            console.error("MPEG-TS Playback failed:", { error, detail, info, message: errorMsg_raw });
+                        // Small delay to allow previous player cleanup
+                        setTimeout(() => {
+                            if (!video.isConnected) {
+                                resolve({ success: false, reason: 'Video element removed' });
+                                return;
+                            }
 
-                            let errorMsg = "Playback Error";
-                            const stats = mpegPlayer ? mpegPlayer.statisticsInfo : null;
-                            const isEmpty = (stats && stats.totalDataReceived < 1024);
+                            // Enhanced configuration for better compatibility
+                            const mpegConfig = {
+                                enableWorker: true,
+                                enableWorkerForMSE: true,
+                                lazyLoadMaxDuration: 3 * 60,
+                                liveBufferLatencyChasing: true,
+                                liveBufferLatencyMaxLatency: 2.0,
+                                liveBufferLatencyMinRemain: 0.5,
+                                seekType: 'range',
+                                enableStashBuffer: false,  // Disable for live streams to reduce latency
+                                autoCleanupSourceBuffer: true,
+                                autoCleanupMaxBackwardDuration: 180,
+                                autoCleanupMinBackwardDuration: 120,
+                            };
 
-                            if (detail === 'NetworkError') {
-                                errorMsg = "Network/Portal Error";
-                            } else if (isEmpty) {
-                                errorMsg = "Empty Stream from Portal";
-                            } else {
-                                // CONSERVATIVE detection: Only blame HEVC if we see specific codec strings
-                                const errorStr = (errorMsg_raw + " " + (info && info.msg ? info.msg : "")).toLowerCase();
-                                const isHEVC = errorStr.includes('hevc') ||
-                                    errorStr.includes('hvc1');
+                            mpegPlayer = mpegts.createPlayer({
+                                type: 'mpegts',
+                                isLive: true,
+                                url: proxyUrl
+                            }, mpegConfig);
 
-                                // Check for generic "no supported source" which could mean anything (often Linux/Chrome missing codecs)
-                                const isUnsupportedFormat = errorStr.includes('supported source') ||
-                                    errorStr.includes('notsupportederror');
+                            // Wrap player methods for error suppression
+                            const wrapMethod = (method, errorName) => {
+                                const original = mpegPlayer[method].bind(mpegPlayer);
+                                mpegPlayer[method] = function(...args) {
+                                    try {
+                                        return original(...args);
+                                    } catch (e) {
+                                        if (e && e.name === errorName) return Promise.resolve();
+                                        throw e;
+                                    }
+                                };
+                            };
 
-                                if (isHEVC) {
-                                    errorMsg = "HEVC/H.265 Not Supported";
-                                    document.getElementById('playerErrorTitle').innerText = "Codec Not Supported";
-                                    document.getElementById('playerErrorDesc').innerText = "This channel uses HEVC (H.265) video. Your browser cannot play this natively.";
-                                    document.getElementById('playerErrorOverlay').style.display = 'flex';
-                                } else if (isUnsupportedFormat) {
-                                    errorMsg = "Format Not Supported";
-                                    document.getElementById('playerErrorTitle').innerText = "Playback Error";
-                                    document.getElementById('playerErrorDesc').innerText = "Your browser failed to decode this MPEG-TS stream. This happens often on some Linux distributions due to missing browser codecs.";
-                                    document.getElementById('playerErrorOverlay').style.display = 'flex';
-                                } else {
-                                    console.log("Attempting direct src fallback for error:", errorMsg_raw);
-                                    video.src = absoluteUrl; // Use absoluteUrl from startPlayer scope if compatible
-                                    video.play().catch(e => {
-                                        console.error("Fallback playback failed:", e);
-                                        document.getElementById('ch-name-display').innerText = name + " (Format Not Supported)";
-                                        document.getElementById('playerErrorOverlay').style.display = 'flex';
-                                    });
+                            wrapMethod('attachMediaElement', 'InvalidStateError');
+                            wrapMethod('load', 'InvalidStateError');
+
+                            try {
+                                mpegPlayer.attachMediaElement(video);
+                                mpegPlayer.load();
+                            } catch (e) {
+                                if (e && e.name !== 'InvalidStateError') {
+                                    console.warn('MPEG-TS attach/load error:', e);
                                 }
                             }
 
-                            document.getElementById('ch-name-display').innerText = name + " (" + errorMsg + ")";
-                        };
-
-                        // Wrap play call to handle SourceBuffer errors gracefully
-                        if (mpegPlayer) {
                             mpegPlayer.play().then(() => {
-                                document.getElementById('ch-name-display').innerText = name;
+                                resolve({ success: true, method: 'mpegts-mse' });
                             }).catch(err => {
-                                // Don't treat InvalidStateError as a fatal playback error
                                 if (err && err.name === 'InvalidStateError') {
-                                    // This is likely a cleanup race, already handled by suppression
-                                    return;
+                                    resolve({ success: true, method: 'mpegts-mse' });  // May still work
+                                } else {
+                                    resolve({ success: false, reason: err && err.message });
                                 }
-                                handlePlaybackError(err, 'PlayError', null);
                             });
 
                             mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
-                                // Filter out SourceBuffer errors from event handler
+                                // Check for audio codec errors (AC-3, EAC-3, etc. not supported in MSE)
+                                const errorStr = (info && info.msg || '') + ' ' + (detail || '');
+                                const isAudioCodecError = errorStr.toLowerCase().includes('audio/mp4') && 
+                                    (errorStr.includes('ac-3') || errorStr.includes('eac-3') || errorStr.includes('unsupported'));
+                                
+                                if (isAudioCodecError) {
+                                    console.warn('MPEG-TS audio codec not supported by MSE, will retry with video-only');
+                                    // Clean up this player
+                                    try { mpegPlayer.pause(); } catch(e) {}
+                                    try { mpegPlayer.unload(); } catch(e) {}
+                                    try { mpegPlayer.detachMediaElement(); } catch(e) {}
+                                    try { mpegPlayer.destroy(); } catch(e) {}
+                                    mpegPlayer = null;
+                                    resolve({ success: false, reason: 'Audio codec not supported', audioError: true });
+                                    return;
+                                }
+                                
+                                // Suppress SourceBuffer errors
                                 if (info && info.msg && typeof info.msg === 'string') {
                                     const msg = info.msg.toLowerCase();
                                     if (msg.includes('sourcebuffer') || msg.includes('invalidstate')) {
-                                        return; // Suppress this error
+                                        return;
                                     }
                                 }
-                                handlePlaybackError(null, detail, info);
+                                console.warn('MPEG-TS error:', type, detail, info);
+                                resolve({ success: false, reason: detail, info });
                             });
-                        }
-                    }, 200); // 200ms delay to allow cleanup (increased from 100ms)
-                } else {
-                    // Raw fallback
-                    video.src = url;
-                    video.play().catch(e => {
-                        document.getElementById('ch-name-display').innerText = name + " (Browser Not Supported)";
+                        }, 100);
                     });
                 }
+
+                // Strategy 2: Direct video.src fallback (bypasses MSE)
+                function tryDirectPlayback() {
+                    return new Promise((resolve) => {
+                        console.log('Trying direct video playback...');
+                        video.src = proxyUrl;
+                        
+                        const cleanup = () => {
+                            video.removeEventListener('loadedmetadata', onMeta);
+                            video.removeEventListener('error', onError);
+                        };
+                        
+                        const onMeta = () => {
+                            cleanup();
+                            video.play().then(() => {
+                                resolve({ success: true, method: 'direct' });
+                            }).catch(e => {
+                                resolve({ success: false, reason: e && e.message });
+                            });
+                        };
+                        
+                        const onError = () => {
+                            cleanup();
+                            resolve({ success: false, reason: 'Direct playback error' });
+                        };
+                        
+                        video.addEventListener('loadedmetadata', onMeta);
+                        video.addEventListener('error', onError);
+                        
+                        // Timeout fallback
+                        setTimeout(() => {
+                            cleanup();
+                            if (video.src === proxyUrl) {
+                                video.src = '';
+                            }
+                            resolve({ success: false, reason: 'Timeout' });
+                        }, 8000);
+                    });
+                }
+
+                // Strategy 3: WebCodecs for HEVC (Chrome 107+)
+                async function tryWebCodecs() {
+                    if (!window.VideoDecoder) {
+                        return { success: false, reason: 'WebCodecs not supported' };
+                    }
+                    
+                    console.log('WebCodecs support detected, but full implementation requires stream probe');
+                    // WebCodecs requires transmuxing which is complex - skip for now
+                    return { success: false, reason: 'WebCodecs requires full transmuxing' };
+                }
+
+                // Main playback orchestrator with fallbacks
+                (async () => {
+                    let errorTitle = 'Playback Error';
+                    let errorDesc = 'Unable to play this stream.';
+                    let playbackSucceeded = false;
+
+                    // Try Strategy 1: Enhanced mpegts.js
+                    const mpegResult = await tryMpegtsPlayer();
+                    
+                    if (mpegResult.success && mpegPlayer) {
+                        document.getElementById('ch-name-display').innerText = name;
+                        playbackSucceeded = true;
+                        
+                        // Set up error monitoring
+                        const monitorPlayback = () => {
+                            if (!mpegPlayer) return;
+                            const stats = mpegPlayer.statisticsInfo;
+                            if (stats && stats.totalDataReceived < 512) {
+                                // Stream might be empty or stalled
+                                console.warn('Low data received, stream may be stalled');
+                            }
+                        };
+                        setInterval(monitorPlayback, 5000);
+                    } else {
+                        console.log('mpegts.js MSE failed:', mpegResult.reason);
+                        
+                        // Clean up failed player
+                        if (mpegPlayer) {
+                            try { mpegPlayer.pause(); } catch(e) {}
+                            try { mpegPlayer.unload(); } catch(e) {}
+                            try { mpegPlayer.detachMediaElement(); } catch(e) {}
+                            try { mpegPlayer.destroy(); } catch(e) {}
+                            mpegPlayer = null;
+                        }
+                        
+                        // Check for audio codec error (AC-3/EAC-3 not supported in MSE)
+                        if (mpegResult.audioError) {
+                            console.log('AC-3/EAC-3 audio not supported, trying direct playback...');
+                            const directResult = await tryDirectPlayback();
+                            if (directResult.success) {
+                                playbackSucceeded = true;
+                            } else {
+                                errorTitle = 'Audio Codec Not Supported';
+                                errorDesc = 'This stream uses AC-3/Dolby audio which browsers cannot decode. Video may play without sound in VLC.';
+                            }
+                        } else {
+                            // Check for HEVC
+                            const errorStr = (mpegResult.reason || '') + ' ' + (mpegResult.info || '');
+                            const isHEVC = errorStr.toLowerCase().includes('hevc') || 
+                                           errorStr.toLowerCase().includes('hvc1') ||
+                                           errorStr.toLowerCase().includes('hev1');
+                            
+                            if (isHEVC) {
+                                errorTitle = 'HEVC/H.265 Not Supported';
+                                errorDesc = 'This channel uses HEVC video codec which requires Chrome 107+ with hardware support, or an external player.';
+                            } else {
+                                // Check if this might be a proxy/portal error
+                                const errorStrLower = (mpegResult.reason || '').toLowerCase();
+                                const isProxyError = errorStrLower.includes('proxy') || 
+                                                     errorStrLower.includes('redirect') ||
+                                                     errorStrLower.includes('blocked') ||
+                                                     errorStrLower.includes('portal');
+                                
+                                if (isProxyError) {
+                                    errorTitle = 'Stream Connection Error';
+                                    errorDesc = 'The portal blocked or redirected this stream. This may be a portal subscription issue.';
+                                } else {
+                                    // Try Strategy 2: Direct playback
+                                    const directResult = await tryDirectPlayback();
+                                    
+                                    if (directResult.success) {
+                                        playbackSucceeded = true;
+                                    } else {
+                                        console.log('Direct playback failed:', directResult.reason);
+                                        errorDesc = 'Your browser cannot decode this MPEG-TS stream. This is common on Linux due to missing browser codecs. Try using an external player like VLC.';
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (!playbackSucceeded) {
+                        document.getElementById('ch-name-display').innerText = name + ' (' + errorTitle + ')';
+                        document.getElementById('playerErrorTitle').innerText = errorTitle;
+                        document.getElementById('playerErrorDesc').innerText = errorDesc;
+                        document.getElementById('playerErrorOverlay').style.display = 'flex';
+                    }
+                })();
             }
         }
         function toggleSidebar() {
