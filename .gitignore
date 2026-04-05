@@ -5,3 +5,27 @@ check_result.json
 venv/
 .env
 .vercel
+
+# IDE / AI tooling
+.kilocode/
+.kilo/
+.agents/
+.impeccable.md
+skills-lock.json
+
+# Dev-only documentation
+AUDIT_SPECIFICATION.md
+TECHNICAL_SPECIFICATION.md
+
+# Debug / scratch scripts
+debug_categories.py
+
+# User data / credentials
+verified_servers.json
+
+# User data / credentials
+verified_servers.json
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
