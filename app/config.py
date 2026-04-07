@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     )
 
     # =============================================================================
+    # Deployment Mode (Vercel/Serverless vs VPS)
+    # =============================================================================
+    vercel_compatible_mode: bool = Field(
+        default=False,
+        description="Enable Vercel-compatible mode with reduced timeouts (10s stream timeout). For long-lived streams, use VPS deployment instead.",
+        alias="VERCEL_COMPATIBLE_MODE",
+    )
+
+    # =============================================================================
     # Concurrency Limits
     # =============================================================================
     max_concurrent_portal_checks: int = Field(
@@ -200,6 +209,26 @@ class Settings(BaseSettings):
         default=10,
         description="Maximum number of redirects to follow when proxying streams",
         alias="MAX_REDIRECTS",
+    )
+
+    stream_auth_cache_ttl: int = Field(
+        default=180,
+        description="Session auth cache TTL in seconds (3 min - aligned with WAF token expiration)",
+        alias="STREAM_AUTH_CACHE_TTL",
+    )
+
+    # =============================================================================
+    # Circuit Breaker Configuration
+    # =============================================================================
+    circuit_breaker_threshold: int = Field(
+        default=10,
+        description="Number of consecutive failures before circuit breaker opens",
+        alias="CIRCUIT_BREAKER_THRESHOLD",
+    )
+    circuit_breaker_duration: int = Field(
+        default=30,
+        description="Duration in seconds to keep circuit breaker open before allowing retry",
+        alias="CIRCUIT_BREAKER_DURATION",
     )
 
 
