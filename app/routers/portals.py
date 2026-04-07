@@ -2,11 +2,13 @@
 Router for portal-related endpoints.
 """
 
+import base64
 import json
 import re
 import gc
 import asyncio
 import logging
+from typing import Optional, List, Dict, Tuple
 
 import requests
 from fastapi import APIRouter, HTTPException, Request
@@ -16,14 +18,10 @@ from slowapi.util import get_remote_address
 
 from app.config import settings
 from app.models import CheckRequest
-from app.services.stalker import StalkerPortal
-from app.services.utils import (
-    detect_expiry,
-    is_portal_url,
-    extract_portal_mac_pairs,
-    is_safe_url,
-    PORTAL_HEADERS,
-)
+from app.services.stalker_async import StalkerClient
+from app.services.base import PORTAL_HEADERS
+from app.services.url_validator import is_safe_url, is_portal_url
+from app.services.text_parser import extract_portal_mac_pairs, clean_stalker_url
 
 # Rate limiter instance
 limiter = Limiter(key_func=get_remote_address)
@@ -32,11 +30,211 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def process_single_portal(url, mac):
+def build_logo_url(channel_logo: str, portal_url: str) -> Optional[str]:
     """
-    Process a single portal URL and MAC address pair.
+    Build the proxy logo URL for a channel logo.
 
-    Performs handshake, retrieves profile, account info, channels, and categories.
+    Args:
+        channel_logo: Raw logo URL from channel data
+        portal_url: Base portal URL
+
+    Returns:
+        Proxy URL string or None if logo is invalid
+    """
+    if not channel_logo or channel_logo in ["None", "null", ""]:
+        return None
+
+    # Remove potential Stalker prefix like "s:0:"
+    logo = re.sub(r"^s:\d+:", "", channel_logo)
+
+    # Make absolute URL
+    if logo.startswith("/"):
+        logo = portal_url.rstrip("/") + logo
+    elif not logo.startswith("http"):
+        logo = portal_url.rstrip("/") + "/" + logo
+
+    # Encode for proxy endpoint
+    encoded = base64.b64encode(logo.encode()).decode()
+    return f"/api/proxy_logo?target={encoded}"
+
+
+def deduplicate_categories(categories: List[Dict]) -> List[Dict]:
+    """
+    Remove duplicate categories by ID while preserving order.
+
+    Args:
+        categories: List of category dicts with 'id' and 'title'
+
+    Returns:
+        Deduplicated list of categories
+    """
+    seen = set()
+    result = []
+    for cat in categories:
+        cid = str(cat.get("id", ""))
+        if cid and cid not in seen:
+            seen.add(cid)
+            result.append(
+                {
+                    "id": cid,
+                    "title": str(cat.get("title") or cat.get("name", "")),
+                }
+            )
+    return result
+
+
+async def fetch_all_channels(client: StalkerClient) -> List[Dict]:
+    """
+    Fetch all channels from the portal using multiple fallback methods.
+
+    Args:
+        client: Authenticated StalkerClient
+
+    Returns:
+        List of channel dictionaries
+    """
+    itv_info = await client.get_itv_info()
+    channels_raw = None
+    if isinstance(itv_info, dict):
+        channels_raw = (
+            itv_info.get("channels")
+            or itv_info.get("data")
+            or itv_info.get("itv_items")
+        )
+    if not channels_raw:
+        channels_raw = await client.get_channels()
+
+    all_channels = []
+    if isinstance(channels_raw, dict) and "data" in channels_raw:
+        all_channels = channels_raw["data"]
+    elif isinstance(channels_raw, list):
+        all_channels = channels_raw
+
+    return all_channels
+
+
+async def fetch_all_categories(client: StalkerClient) -> List[Dict]:
+    """
+    Fetch all categories from the portal using multiple fallback methods.
+
+    Args:
+        client: Authenticated StalkerClient
+
+    Returns:
+        List of category dictionaries
+    """
+    genres_raw = await client.get_genres()
+    if not genres_raw:
+        genres_raw = await client.get_itv_groups()
+    if not genres_raw:
+        genres_raw = await client.get_short_genres()
+    if not genres_raw:
+        genres_raw = await client.get_all_itv_groups()
+    if not genres_raw:
+        genres_raw = await client.get_categories()
+
+    # Also check itv_info as fallback
+    if not genres_raw:
+        itv_info = await client.get_itv_info()
+        if isinstance(itv_info, dict):
+            genres_raw = (
+                itv_info.get("genres")
+                or itv_info.get("groups")
+                or itv_info.get("itv_groups")
+            )
+
+    categories = []
+    if isinstance(genres_raw, dict) and "data" in genres_raw:
+        categories = genres_raw["data"]
+    elif isinstance(genres_raw, list):
+        categories = genres_raw
+
+    return categories
+
+
+def enhance_channels_with_categories(
+    channels: List[Dict], categories: List[Dict], portal_url: str
+) -> Tuple[List[Dict], Dict[str, str]]:
+    """
+    Process channels to add category information and build category map.
+
+    Args:
+        channels: Raw list of channel dictionaries
+        categories: Raw list of category dictionaries
+        portal_url: Base portal URL for logo construction
+
+    Returns:
+        Tuple of (processed_channels, category_map)
+    """
+    # Build initial category map from categories
+    cat_map = {}
+    for c in categories:
+        if isinstance(c, dict):
+            cid = str(c.get("id", ""))
+            ctitle = str(c.get("title") or c.get("name") or c.get("label") or cid)
+            if cid:
+                cat_map[cid] = ctitle
+
+    processed_channels = []
+    for c in channels:
+        if not isinstance(c, dict):
+            continue
+
+        name = str(c.get("name", ""))
+        logo = build_logo_url(str(c.get("logo", "")), portal_url)
+
+        # Determine category ID
+        cat_id = "uncategorized"
+        for key in [
+            "tv_genre_id",
+            "category_id",
+            "genre_id",
+            "group_id",
+            "genre",
+            "itv_group_id",
+        ]:
+            val = c.get(key)
+            if val is not None and str(val) != "":
+                cat_id = str(val)
+                break
+
+        # Determine category name
+        cat_name = None
+        for key in ["category_name", "genre_name", "group_name", "genre_title"]:
+            val = c.get(key)
+            if val is not None and str(val) != "":
+                cat_name = str(val)
+                break
+
+        # If we have category ID but no name in existing map, add it
+        if cat_id != "uncategorized" and cat_name and cat_id not in cat_map:
+            cat_map[cat_id] = cat_name
+            categories.append({"id": cat_id, "title": cat_name})
+
+        processed_channels.append(
+            {
+                "id": c.get("id"),
+                "name": name,
+                "cmd": c.get("cmd"),
+                "logo": logo,
+                "category_id": cat_id,
+            }
+        )
+
+    # Ensure all category IDs referenced in channels exist in cat_map
+    unique_cat_ids = {ch["category_id"] for ch in processed_channels}
+    for cid in unique_cat_ids:
+        if cid not in cat_map:
+            cname = "Uncategorized" if cid == "uncategorized" else f"Group {cid}"
+            cat_map[cid] = cname
+            categories.append({"id": cid, "title": cname})
+
+    return processed_channels, cat_map
+
+
+async def process_single_portal(url: str, mac: str) -> Optional[Dict]:
+    """
+    Process a single portal URL and MAC address pair asynchronously.
 
     Args:
         url: Portal URL
@@ -45,163 +243,32 @@ def process_single_portal(url, mac):
     Returns:
         Dictionary with portal data or None if failed
     """
-    portal = StalkerPortal(url, mac)
-    try:
-        logger.info(f"Analyzing portal: {url} ({mac})")
-        if portal.handshake():
-            profile = portal.get_profile()
-            acc_info = portal.get_account_info()
+    async with StalkerClient(url, mac) as client:
+        try:
+            logger.info(f"Analyzing portal: {url} ({mac})")
+            exp_info = await client.get_expiration_info()
+            if client._active_path is None:
+                return None
+            expiry = exp_info.expiration or "Unlimited"
 
-            # Debug logging to see what we're actually getting
-            # We don't log the full object to avoid flooding logs, just keys and existence
-            p_keys = list(profile.keys()) if isinstance(profile, dict) else "Not a dict"
-            a_keys = (
-                list(acc_info.keys()) if isinstance(acc_info, dict) else "Not a dict"
+            # Fetch channels and categories using helpers
+            all_channels = await fetch_all_channels(client)
+            categories = await fetch_all_categories(client)
+
+            # Enhance channels with category info and build category map
+            processed_channels, cat_map = enhance_channels_with_categories(
+                all_channels, categories, url
             )
-            logger.info(
-                f"Portal data for {url}: Profile keys={p_keys}, AccInfo keys={a_keys}"
-            )
 
-            expiry = detect_expiry(profile) or detect_expiry(acc_info) or "Unlimited"
-
-            itv_info = portal.get_itv_info()
-
-            channels_raw = None
-            if isinstance(itv_info, dict):
-                channels_raw = (
-                    itv_info.get("channels")
-                    or itv_info.get("data")
-                    or itv_info.get("itv_items")
-                )
-
-            if not channels_raw:
-                channels_raw = portal.get_channels()
-
-            all_channels = []
-            if isinstance(channels_raw, dict) and "data" in channels_raw:
-                all_channels = channels_raw["data"]
-            elif isinstance(channels_raw, list):
-                all_channels = channels_raw
-
-            # Aggregate categories
-            genres_raw = portal.get_genres()
-            if not genres_raw:
-                genres_raw = portal.get_itv_groups()
-            if not genres_raw:
-                genres_raw = portal.get_short_genres()
-            if not genres_raw:
-                genres_raw = portal.get_all_itv_groups()
-            if not genres_raw:
-                genres_raw = portal.get_categories()
-
-            if isinstance(itv_info, dict) and not genres_raw:
-                genres_raw = (
-                    itv_info.get("genres")
-                    or itv_info.get("groups")
-                    or itv_info.get("itv_groups")
-                )
-
-            categories = []
-            if isinstance(genres_raw, dict) and "data" in genres_raw:
-                categories = genres_raw["data"]
-            elif isinstance(genres_raw, list):
-                categories = genres_raw
-
-            cat_map = {}
-            for c in categories:
-                if isinstance(c, dict):
-                    cid = str(c.get("id", ""))
-                    ctitle = str(
-                        c.get("title") or c.get("name") or c.get("label") or cid
-                    )
-                    if cid:
-                        cat_map[cid] = ctitle
-
-            processed_channels = []
-            for c in all_channels:
-                if not isinstance(c, dict):
-                    continue
-
-                name = str(c.get("name", ""))
-                logo = str(c.get("logo", ""))
-                if logo and logo not in ["None", "null", ""]:
-                    logo = re.sub(r"^s:\d+:", "", logo)
-                    if logo.startswith("/"):
-                        logo = url.rstrip("/") + logo
-                    elif not logo.startswith("http"):
-                        logo = url.rstrip("/") + "/" + logo
-                    import base64
-
-                    logo = f"/api/proxy_logo?target={base64.b64encode(logo.encode()).decode()}"
-                else:
-                    logo = None
-
-                cat_id = "uncategorized"
-                for key in [
-                    "tv_genre_id",
-                    "category_id",
-                    "genre_id",
-                    "group_id",
-                    "genre",
-                    "itv_group_id",
-                ]:
-                    val = c.get(key)
-                    if val is not None and str(val) != "":
-                        cat_id = str(val)
-                        break
-
-                cat_name = None
-                for key in ["category_name", "genre_name", "group_name", "genre_title"]:
-                    val = c.get(key)
-                    if val is not None and str(val) != "":
-                        cat_name = str(val)
-                        break
-
-                if cat_id != "uncategorized" and cat_name:
-                    cid_str = str(cat_id)
-                    cname_str = str(cat_name)
-                    if cid_str not in cat_map:
-                        cat_map[cid_str] = cname_str
-                        categories.append({"id": cid_str, "title": cname_str})
-
-                processed_channels.append(
-                    {
-                        "id": c.get("id"),
-                        "name": name,
-                        "cmd": c.get("cmd"),
-                        "logo": logo,
-                        "category_id": cat_id,
-                    }
-                )
-
-            # Sync categories found in channels
-            unique_ids = {ch["category_id"] for ch in processed_channels}
-            for cid in unique_ids:
-                if cid not in cat_map:
-                    c_name = (
-                        "Uncategorized" if cid == "uncategorized" else f"Group {cid}"
-                    )
-                    categories.append({"id": cid, "title": c_name})
-                    cat_map[cid] = c_name
-
-            # Filter and unique
-            unique_categories = []
-            seen_cat_ids = set()
-            for cat in categories:
-                cid = str(cat.get("id", ""))
-                if cid and cid not in seen_cat_ids:
-                    seen_cat_ids.add(cid)
-                    unique_categories.append(
-                        {
-                            "id": cid,
-                            "title": str(cat.get("title") or cat.get("name", "")),
-                        }
-                    )
+            # Build unique categories list from cat_map
+            unique_categories = [
+                {"id": cid, "title": title} for cid, title in cat_map.items() if cid
+            ]
 
             logger.info(
                 f"   -> Found {len(processed_channels)} channels and {len(unique_categories)} categories for {url}"
             )
-            res = {
+            return {
                 "url": url,
                 "mac": mac,
                 "channel_count": len(processed_channels),
@@ -209,20 +276,13 @@ def process_single_portal(url, mac):
                 "channels": processed_channels,
                 "expiry": expiry,
             }
-            # Explicitly cleanup local large refs before returning
-            del processed_channels
-            del all_channels
-            del categories
-            return res
-    except Exception as e:
-        logger.error(f"Error processing portal {url}: {e}")
-    finally:
-        portal.session.close()
-    return None
+        except Exception as e:
+            logger.error(f"Error processing portal {url}: {e}")
+            return None
 
 
 @router.post("/api/check")
-@limiter.limit("5/minute")
+@limiter.limit(settings.rate_limit_portal_check)
 async def check_portals(request: Request, req: CheckRequest):
     """
     Check portals and extract channel information.
@@ -293,7 +353,7 @@ async def check_portals(request: Request, req: CheckRequest):
                 try:
                     # Process with timeout
                     return await asyncio.wait_for(
-                        asyncio.to_thread(process_single_portal, url, mac),
+                        process_single_portal(url, mac),
                         timeout=settings.stream_timeout,
                     )
                 except asyncio.TimeoutError:

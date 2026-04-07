@@ -13,7 +13,7 @@ Tests FastAPI endpoints:
 
 import base64
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -66,19 +66,23 @@ class TestCheckPortalsEndpoint:
         """Test check with valid portal/MAC pair."""
         text = "PORTAL: http://example.com/stalker_portal/c/\nMAC: 00:11:22:33:44:55"
 
-        with patch("app.routers.portals.StalkerPortal") as mock_portal_class:
-            mock_portal = MagicMock()
-            mock_portal_class.return_value = mock_portal
-            mock_portal.handshake.return_value = True
-            mock_portal.get_profile.return_value = {
-                "login": "user",
-                "expire_date": "2025-12-31",
-            }
-            mock_portal.get_account_info.return_value = {"status": "Active"}
-            mock_portal.get_itv_info.return_value = None
-            mock_portal.get_channels.return_value = []
-            mock_portal.get_genres.return_value = []
-            mock_portal.session.close = MagicMock()
+        with patch("app.routers.portals.StalkerClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.handshake = AsyncMock(return_value=True)
+            mock_client.get_profile = AsyncMock(
+                return_value={
+                    "login": "user",
+                    "expire_date": "2025-12-31",
+                }
+            )
+            mock_client.get_account_info = AsyncMock(return_value={"status": "Active"})
+            mock_client.get_itv_info = AsyncMock(return_value=None)
+            mock_client.get_channels = AsyncMock(return_value=[])
+            mock_client.get_genres = AsyncMock(return_value=[])
+            mock_client.session.close = AsyncMock()
 
             response = client.post("/api/check", json={"text": text})
 
@@ -116,16 +120,20 @@ class TestCheckPortalsEndpoint:
             mock_response.text = "PORTAL: http://portal.com/c/ MAC: 00:11:22:33:44:55"
             mock_get.return_value = mock_response
 
-            with patch("app.routers.portals.StalkerPortal") as mock_portal_class:
-                mock_portal = MagicMock()
-                mock_portal_class.return_value = mock_portal
-                mock_portal.handshake.return_value = True
-                mock_portal.get_profile.return_value = {"login": "user"}
-                mock_portal.get_account_info.return_value = {"status": "Active"}
-                mock_portal.get_itv_info.return_value = None
-                mock_portal.get_channels.return_value = []
-                mock_portal.get_genres.return_value = []
-                mock_portal.session.close = MagicMock()
+            with patch("app.routers.portals.StalkerClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client_class.return_value = mock_client
+                mock_client.__aenter__.return_value = mock_client
+                mock_client.__aexit__.return_value = None
+                mock_client.handshake = AsyncMock(return_value=True)
+                mock_client.get_profile = AsyncMock(return_value={"login": "user"})
+                mock_client.get_account_info = AsyncMock(
+                    return_value={"status": "Active"}
+                )
+                mock_client.get_itv_info = AsyncMock(return_value=None)
+                mock_client.get_channels = AsyncMock(return_value=[])
+                mock_client.get_genres = AsyncMock(return_value=[])
+                mock_client.session.close = AsyncMock()
 
                 response = client.post("/api/check", json={"text": text})
 
@@ -137,13 +145,15 @@ class TestGetLinkEndpoint:
 
     def test_get_link_success(self, client):
         """Test successful link generation."""
-        with patch("app.routers.streams.StalkerPortal") as mock_portal_class:
-            mock_portal = MagicMock()
-            mock_portal_class.return_value = mock_portal
-            mock_portal.handshake.return_value = True
-            mock_portal.create_link.return_value = {
-                "cmd": "ffmpeg http://stream.example.com/video.ts"
-            }
+        with patch("app.routers.streams.StalkerClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.handshake = AsyncMock(return_value=True)
+            mock_client.create_link = AsyncMock(
+                return_value={"cmd": "ffmpeg http://stream.example.com/video.ts"}
+            )
 
             response = client.post(
                 "/api/get_link",
@@ -161,10 +171,12 @@ class TestGetLinkEndpoint:
 
     def test_get_link_handshake_failure(self, client):
         """Test link generation when handshake fails."""
-        with patch("app.routers.streams.StalkerPortal") as mock_portal_class:
-            mock_portal = MagicMock()
-            mock_portal_class.return_value = mock_portal
-            mock_portal.handshake.return_value = False
+        with patch("app.routers.streams.StalkerClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.handshake = AsyncMock(return_value=False)
 
             response = client.post(
                 "/api/get_link",
@@ -180,11 +192,13 @@ class TestGetLinkEndpoint:
 
     def test_get_link_no_stream_url(self, client):
         """Test link generation when no stream URL is returned."""
-        with patch("app.routers.streams.StalkerPortal") as mock_portal_class:
-            mock_portal = MagicMock()
-            mock_portal_class.return_value = mock_portal
-            mock_portal.handshake.return_value = True
-            mock_portal.create_link.return_value = {}  # No cmd field
+        with patch("app.routers.streams.StalkerClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.handshake = AsyncMock(return_value=True)
+            mock_client.create_link = AsyncMock(return_value={})  # No cmd field
 
             response = client.post(
                 "/api/get_link",
@@ -211,11 +225,13 @@ class TestGetLinkEndpoint:
 
     def test_get_link_empty_cmd_result(self, client):
         """Test link generation when create_link returns empty cmd."""
-        with patch("app.routers.streams.StalkerPortal") as mock_portal_class:
-            mock_portal = MagicMock()
-            mock_portal_class.return_value = mock_portal
-            mock_portal.handshake.return_value = True
-            mock_portal.create_link.return_value = {"cmd": ""}  # Empty cmd
+        with patch("app.routers.streams.StalkerClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.handshake = AsyncMock(return_value=True)
+            mock_client.create_link = AsyncMock(return_value={"cmd": ""})  # Empty cmd
 
             response = client.post(
                 "/api/get_link",
@@ -256,8 +272,11 @@ class TestProxyLogoEndpoint:
             "/api/proxy_logo?target=not-valid-base64!!!", follow_redirects=False
         )
 
-        assert response.status_code == 302  # Redirect to default image
-        assert "cdn-icons-png.flaticon.com" in response.headers.get("location", "")
+        # Should return placeholder image directly (no redirect)
+        assert response.status_code == 200
+        assert response.headers.get("content-type") == "image/png"
+        # Should have X-Logo-Proxy: fallback-invalid header
+        assert response.headers.get("x-logo-proxy") == "fallback-invalid"
 
     def test_proxy_logo_unsafe_url(self, client):
         """Test logo proxy with unsafe URL (SSRF protection)."""
