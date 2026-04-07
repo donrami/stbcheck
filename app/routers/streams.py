@@ -7,8 +7,9 @@ import binascii
 import ipaddress
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
@@ -161,6 +162,64 @@ _stream_proxy_stats = {
     "failed": 0,
     "circuit_opens": 0,
 }
+
+# In-memory cache for stream authentication (session cookies)
+# Key format: "normalized_portal_url:mac_clean" -> {"cookies": dict, "timestamp": float}
+_stream_auth_cache = {}
+_stream_auth_cache_ttl = 600  # 10 minutes
+_stream_auth_cache_maxsize = 1000
+
+
+def _prune_stream_auth_cache():
+    """Remove expired entries from the auth cache."""
+    cutoff = time.time() - _stream_auth_cache_ttl
+    expired_keys = [
+        k for k, v in _stream_auth_cache.items() if v.get("timestamp", 0) < cutoff
+    ]
+    for k in expired_keys:
+        del _stream_auth_cache[k]
+    if expired_keys:
+        logger.debug(f"Pruned {len(expired_keys)} expired auth cache entries")
+
+
+def _get_stream_auth_cookies(portal_url: str, mac: str) -> dict:
+    """
+    Retrieve cached session cookies for a given portal URL and MAC.
+    Cookies are used to maintain authentication across multiple requests to Stalker portals.
+
+    Args:
+        portal_url: The portal base URL (will be normalized)
+        mac: MAC address (will be normalized)
+
+    Returns:
+        Dictionary of cookie name-value pairs, or empty dict if not found/expired.
+    """
+    if not portal_url:
+        return {}
+    normalized_url = portal_url.rstrip("/")
+    mac_clean = mac.upper().replace(":", "")
+    cache_key = f"{normalized_url}:{mac_clean}"
+
+    # Prune if cache is at capacity
+    if len(_stream_auth_cache) >= _stream_auth_cache_maxsize:
+        _prune_stream_auth_cache()
+
+    entry = _stream_auth_cache.get(cache_key)
+    if entry:
+        if time.time() - entry.get("timestamp", 0) < _stream_auth_cache_ttl:
+            logger.debug(f"Auth cache HIT for {cache_key}")
+            return entry.get("cookies", {})
+        else:
+            del _stream_auth_cache[cache_key]
+            logger.debug(f"Auth cache entry expired for {cache_key}")
+    return {}
+
+
+# In-memory cache for stream authentication (session cookies)
+# Maps auth_id -> {"cookies": dict, "timestamp": float}
+_stream_auth_cache: Dict[str, dict] = {}
+_stream_auth_cache_ttl = 600  # 10 minutes
+_stream_auth_cache_maxsize = 1000
 
 
 def _get_cached_logo(target: str):
@@ -473,6 +532,34 @@ async def get_link(request: Request, req: StreamRequest):
                         status_code=400, detail="Generated stream link is empty"
                     )
 
+                # Extract and cache session cookies for this portal+MAC
+                cookie_dict = {}
+                try:
+                    if client._session:
+                        cookies_for_domain = client._session.cookie_jar.filter_cookies(
+                            client.base_url
+                        )
+                        for name, morsel in cookies_for_domain.items():
+                            cookie_dict[name] = morsel.value
+                except Exception as e:
+                    logger.warning(f"Failed to extract cookies from StalkerClient: {e}")
+
+                if cookie_dict:
+                    # Normalize portal URL and MAC for cache key
+                    normalized_url = req.url.rstrip("/")
+                    mac_clean = req.mac.upper().replace(":", "")
+                    cache_key = f"{normalized_url}:{mac_clean}"
+                    _stream_auth_cache[cache_key] = {
+                        "cookies": cookie_dict,
+                        "timestamp": time.time(),
+                    }
+                    logger.info(
+                        f"Cached {len(cookie_dict)} session cookies for portal {normalized_url} with MAC {mac_clean}"
+                    )
+                    # Prune if cache over capacity
+                    if len(_stream_auth_cache) > _stream_auth_cache_maxsize:
+                        _prune_stream_auth_cache()
+
                 b64_url = base64.b64encode(clean_url.encode()).decode()
                 b64_origin = base64.b64encode(req.url.encode()).decode()
                 proxy_url = f"/api/proxy_stream?target={b64_url}&mac={req.mac}&origin={b64_origin}"
@@ -486,14 +573,21 @@ async def get_link(request: Request, req: StreamRequest):
 
 @router.get("/api/check_stream")
 @limiter.limit(settings.rate_limit_stream_ops)
-def check_stream(request: Request, target: str, mac: str, origin: Optional[str] = None):
+def check_stream(
+    request: Request,
+    target: str,
+    mac: str,
+    origin: Optional[str] = None,
+    auth_id: Optional[str] = None,
+):
     """
     Check if a stream is accessible.
 
     Args:
         target: Base64-encoded stream URL
         mac: MAC address for authentication
-        origin: Optional base64-encoded origin URL
+        origin: Optional base64-encoded origin URL for referer
+        auth_id: Optional auth ID to retrieve session cookies from cache
 
     Returns:
         Dictionary with status information
@@ -513,10 +607,8 @@ def check_stream(request: Request, target: str, mac: str, origin: Optional[str] 
             return {"status": "error", "code": 403, "message": "Unsafe URL"}
 
         # Normalize MAC address to standard format (uppercase with colons)
-        # Most portals expect MAC in format 00:1A:79:B0:35:FB
         mac_normalized = mac.upper()
         if len(mac_normalized) == 12 and ":" not in mac_normalized:
-            # Convert 001A79B035FB to 00:1A:79:B0:35:FB
             mac_normalized = ":".join(
                 [mac_normalized[i : i + 2] for i in range(0, 12, 2)]
             )
@@ -529,8 +621,18 @@ def check_stream(request: Request, target: str, mac: str, origin: Optional[str] 
             "Connection": "keep-alive",
         }
 
-        # Set MAC cookie (standard format)
-        headers["Cookie"] = f"mac={mac_normalized}"
+        # Retrieve cached session cookies using portal URL (referer) and MAC
+        session_cookies = {}
+        if referer:
+            session_cookies = _get_stream_auth_cookies(referer, mac)
+
+        # Build Cookie header
+        if session_cookies:
+            cookie_parts = [f"{k}={v}" for k, v in session_cookies.items()]
+            cookie_parts.append(f"mac={mac_normalized}")
+            headers["Cookie"] = "; ".join(cookie_parts)
+        else:
+            headers["Cookie"] = f"mac={mac_normalized}"
 
         if referer:
             headers["Referer"] = referer
@@ -539,37 +641,29 @@ def check_stream(request: Request, target: str, mac: str, origin: Optional[str] 
             headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
 
         # Some portals require a Range header to consider the request valid for streaming
-        # Adding a small range to mimic a real player's initial request
         headers["Range"] = "bytes=0-1023"
 
         # Just a minimal GET to check the status
-        with (
-            requests.get(
-                real_url,
-                headers=headers,
-                stream=True,
-                timeout=settings.stream_timeout,  # Use stream_timeout for consistency with proxy
-                verify=settings.verify_ssl,
-                allow_redirects=True,  # Follow redirects to get final status
-            ) as r
-        ):
+        with requests.get(
+            real_url,
+            headers=headers,
+            stream=True,
+            timeout=settings.stream_timeout,
+            verify=settings.verify_ssl,
+            allow_redirects=True,
+        ) as r:
             logger.info(f"Stream check for {real_url}: {r.status_code}")
             if r.status_code == 401:
-                # Log additional details for 401 to help diagnose auth issues
+                # Log detailed auth failure info
                 resp_headers = dict(r.headers)
                 logger.warning(
-                    f"401 Unauthorized for stream. "
-                    f"MAC used: {mac_normalized}, Referer: {headers.get('Referer')}, "
-                    f"Response headers: {resp_headers}"
+                    f"401 Unauthorized during check_stream for {real_url}. "
+                    f"Headers sent: {headers}, Response headers: {resp_headers}"
                 )
-                # Try to read response body for error details (without consuming the stream)
                 try:
-                    # Read a small portion of the body
                     body_start = r.raw.read(1024)
                     if body_start:
-                        logger.warning(
-                            f"401 response body (first 1KB): {body_start[:200]}"
-                        )
+                        logger.warning(f"401 body (first 1KB): {body_start[:200]}")
                 except Exception:
                     pass
             return {
@@ -586,7 +680,13 @@ def check_stream(request: Request, target: str, mac: str, origin: Optional[str] 
 
 @router.get("/api/proxy_stream")
 @limiter.limit(settings.rate_limit_stream_ops)
-def proxy_stream(request: Request, target: str, mac: str, origin: Optional[str] = None):
+def proxy_stream(
+    request: Request,
+    target: str,
+    mac: str,
+    origin: Optional[str] = None,
+    auth_id: Optional[str] = None,
+):
     """
     Proxy stream content to the client.
 
@@ -595,6 +695,7 @@ def proxy_stream(request: Request, target: str, mac: str, origin: Optional[str] 
         mac: MAC address for authentication
         request: FastAPI Request object for headers
         origin: Optional base64-encoded origin URL for referer
+        auth_id: Optional auth ID to retrieve session cookies from cache
 
     Returns:
         StreamingResponse with the video stream
@@ -635,7 +736,7 @@ def proxy_stream(request: Request, target: str, mac: str, origin: Optional[str] 
         if ":" not in mac_clean and len(mac_clean) == 12:
             mac_with_colons = ":".join([mac_clean[i : i + 2] for i in range(0, 12, 2)])
 
-        # Try to derive host and referer from the target URL
+        # Build base headers
         headers = {
             "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
             "X-User-Agent": "model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c",
@@ -644,10 +745,18 @@ def proxy_stream(request: Request, target: str, mac: str, origin: Optional[str] 
             "Connection": "keep-alive",
         }
 
-        # Set MAC cookie in both common formats for compatibility
-        headers["Cookie"] = f"mac={mac_with_colons}"
-        if mac_clean != mac_with_colons.replace(":", ""):
-            headers["Cookie2"] = f"mac={mac_clean}"
+        # Retrieve cached session cookies using portal URL (referer) and MAC
+        session_cookies = {}
+        if referer:
+            session_cookies = _get_stream_auth_cookies(referer, mac)
+
+        # Build Cookie header
+        if session_cookies:
+            cookie_parts = [f"{k}={v}" for k, v in session_cookies.items()]
+            cookie_parts.append(f"mac={mac_with_colons}")
+            headers["Cookie"] = "; ".join(cookie_parts)
+        else:
+            headers["Cookie"] = f"mac={mac_with_colons}"
 
         if referer:
             headers["Referer"] = referer
