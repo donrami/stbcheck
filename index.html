@@ -477,6 +477,21 @@
             background: var(--color-success);
             color: var(--text-primary);
             border-color: var(--color-success);
+            animation: copyPop 0.4s ease;
+        }
+
+        @keyframes copyPop {
+            0%   { transform: scale(1); }
+            30%  { transform: scale(1.3); }
+            60%  { transform: scale(0.9); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes copyPop {
+            0%   { transform: scale(1); }
+            30%  { transform: scale(1.3); }
+            60%  { transform: scale(0.9); }
+            100% { transform: scale(1); }
         }
 
         .btn-verify.is-verified {
@@ -1627,7 +1642,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.2/dist/mpegts.min.js"></script>
     <script>
         // Hardening: i18n Support - Internationalization utilities
         const i18n = {
@@ -1975,7 +1990,7 @@
                             <button class="btn-action" onclick="loadVerifiedServer(${index})" title="Load this server" aria-label="Load this server">
                                 <i class="fas fa-play"></i>
                             </button>
-                            <button class="btn-action" onclick="copyVerifiedUrl(${index})" title="Copy URL" aria-label="Copy server URL">
+                            <button class="btn-action" onclick="copyVerifiedUrl(${index}, event)" title="Copy URL" aria-label="Copy server URL">
                                 <i class="fas fa-link"></i>
                             </button>
                             <button class="btn-action" onclick="confirmDeleteServer(${index})" title="Delete" aria-label="Delete server">
@@ -1999,12 +2014,49 @@
             }
         }
 
-        function copyVerifiedUrl(index) {
-            const server = verifiedServers[index];
-            if (server) {
-                navigator.clipboard.writeText(server.url);
-                showAlert('URL copied to clipboard!');
+        function doCopy(text, btn) {
+            if (!btn) return;
+            const icon = btn.querySelector('i');
+            const originalClass = icon ? icon.className : '';
+            const showSuccess = () => {
+                btn.classList.add('copied');
+                if (icon) { icon.className = 'fas fa-check'; }
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    if (icon) { icon.className = originalClass; }
+                }, 1500);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(showSuccess).catch(() => fallbackCopy(text, btn));
+            } else {
+                fallbackCopy(text, btn);
             }
+        }
+
+        function fallbackCopy(text, btn) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch(e) {}
+            document.body.removeChild(ta);
+            const icon = btn.querySelector('i');
+            const originalClass = icon ? icon.className : '';
+            btn.classList.add('copied');
+            if (icon) { icon.className = 'fas fa-check'; }
+            setTimeout(() => {
+                btn.classList.remove('copied');
+                if (icon) { icon.className = originalClass; }
+            }, 1500);
+        }
+
+        function copyVerifiedUrl(index, event) {
+            const server = verifiedServers[index];
+            if (!server) return;
+            const btn = event?.target?.closest('.btn-action');
+            doCopy(server.url, btn);
         }
 
         // Store the index of the server to be deleted
@@ -2195,10 +2247,10 @@
                         </div>
                     </div>
                     <div class="portal-actions">
-                        <button class="btn-action" title="Copy URL" aria-label="Copy portal URL" onclick="event.stopPropagation(); copyPortalUrl(${index})">
+                        <button class="btn-action" title="Copy URL" aria-label="Copy portal URL" onclick="event.stopPropagation(); copyPortalUrl(${index}, event)">
                             <i class="fas fa-link"></i>
                         </button>
-                        <button class="btn-action" title="Copy MAC" aria-label="Copy portal MAC address" onclick="event.stopPropagation(); copyPortalMac(${index})">
+                        <button class="btn-action" title="Copy MAC" aria-label="Copy portal MAC address" onclick="event.stopPropagation(); copyPortalMac(${index}, event)">
                             <i class="fas fa-mobile-alt"></i>
                         </button>
                         <button class="btn-verify" title="Add to verified" aria-label="Add server to verified list" onclick="event.stopPropagation(); verifyServer(${index})">
@@ -2403,20 +2455,18 @@
             saveState();
         }
 
-        function copyPortalUrl(index) {
+        function copyPortalUrl(index, event) {
             const portal = currentPortals[index];
-            if (portal) {
-                navigator.clipboard.writeText(portal.url);
-                showAlert('Portal URL copied to clipboard!');
-            }
+            if (!portal) return;
+            const btn = event?.target?.closest('.btn-action');
+            doCopy(portal.url, btn);
         }
 
-        function copyPortalMac(index) {
+        function copyPortalMac(index, event) {
             const portal = currentPortals[index];
-            if (portal) {
-                navigator.clipboard.writeText(portal.mac);
-                showAlert('Portal MAC copied to clipboard!');
-            }
+            if (!portal) return;
+            const btn = event?.target?.closest('.btn-action');
+            doCopy(portal.mac, btn);
         }
 
         function verifyServer(index) {
@@ -2586,9 +2636,72 @@
                 console.log("Detected MPEG-TS stream:", name);
                 // Multi-strategy MPEG-TS playback with fallbacks
                 const absoluteUrl = proxyUrl;
-                
+
+                 // Pre-flight validation: Check if stream returns valid MPEG-TS data
+                 async function validateStream(url) {
+                     try {
+                         const response = await fetch(url, {
+                             method: 'GET',
+                             headers: {
+                                 'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
+                                 'Range': 'bytes=0-4095'  // First 4KB
+                             },
+                             credentials: 'omit',
+                             signal: AbortSignal.timeout(60000)  // Increased to 60 seconds for slow streams
+                         });
+
+                        if (!response.ok && response.status !== 206) {
+                            return { valid: false, reason: `HTTP ${response.status}` };
+                        }
+
+                        const buffer = await response.arrayBuffer();
+                        if (buffer.byteLength === 0) {
+                            return { valid: false, reason: 'Empty response' };
+                        }
+
+                        // Check for MPEG-TS sync bytes (0x47) at expected intervals
+                        const view = new Uint8Array(buffer);
+                        let syncByteCount = 0;
+                        let hasValidSync = false;
+
+                        // MPEG-TS packets are 188 bytes, sync byte is at start of each packet
+                        for (let i = 0; i < Math.min(view.length, 188 * 10); i++) {
+                            if (view[i] === 0x47) {
+                                syncByteCount++;
+                                // Check if sync pattern continues (at least 3 consecutive packets)
+                                if (i + 188 < view.length && view[i + 188] === 0x47) {
+                                    if (i + 376 < view.length && view[i + 376] === 0x47) {
+                                        hasValidSync = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (hasValidSync) {
+                            return { valid: true, reason: 'Valid MPEG-TS sync pattern detected' };
+                        } else if (syncByteCount > 0) {
+                            return { valid: false, reason: 'Inconsistent sync bytes (0x47 pattern)' };
+                        } else {
+                            return { valid: false, reason: 'No MPEG-TS sync bytes (0x47) found' };
+                        }
+                     } catch (e) {
+                         // Log detailed error for debugging
+                         console.warn('Stream validation network error:', e);
+                         
+                         // Check for specific error types
+                         if (e.name === 'AbortError') {
+                             return { valid: false, reason: 'Validation timeout (aborted)' };
+                         } else if (e.name === 'TypeError') {
+                             return { valid: false, reason: 'Network error: ' + (e.message || 'connection failed') };
+                         } else {
+                             return { valid: false, reason: e.message || 'Validation request failed' };
+                         }
+                     }
+                }
+
                 // Strategy 1: Enhanced mpegts.js with MSE
-                function tryMpegtsPlayer() {
+                async function tryMpegtsPlayer() {
                     return new Promise((resolve) => {
                         if (!mpegts.getFeatureList().mseLivePlayback) {
                             resolve({ success: false, reason: 'MSE not supported' });
@@ -2596,26 +2709,42 @@
                         }
 
                         // Small delay to allow previous player cleanup
-                        setTimeout(() => {
+                        setTimeout(async () => {
                             if (!video.isConnected) {
                                 resolve({ success: false, reason: 'Video element removed' });
                                 return;
                             }
 
-                            // Enhanced configuration for better compatibility
-                            const mpegConfig = {
-                                enableWorker: true,
-                                enableWorkerForMSE: true,
-                                lazyLoadMaxDuration: 3 * 60,
-                                liveBufferLatencyChasing: true,
-                                liveBufferLatencyMaxLatency: 2.0,
-                                liveBufferLatencyMinRemain: 0.5,
-                                seekType: 'range',
-                                enableStashBuffer: false,  // Disable for live streams to reduce latency
-                                autoCleanupSourceBuffer: true,
-                                autoCleanupMaxBackwardDuration: 180,
-                                autoCleanupMinBackwardDuration: 120,
-                            };
+                            // Preflight: Validate stream is returning valid MPEG-TS data
+                            try {
+                                const validationResult = await validateStream(proxyUrl);
+                                if (!validationResult.valid) {
+                                    console.warn('Stream validation failed:', validationResult.reason);
+                                    resolve({ success: false, reason: 'Stream validation failed: ' + validationResult.reason });
+                                    return;
+                                }
+                            } catch (e) {
+                                console.warn('Stream validation error:', e);
+                                // Continue anyway - validation is best-effort
+                            }
+
+                             // Enhanced configuration for better compatibility
+                             const mpegConfig = {
+                                 enableWorker: true,
+                                 enableWorkerForMSE: true,
+                                 lazyLoadMaxDuration: 3 * 60,
+                                 liveBufferLatencyChasing: true,
+                                 liveBufferLatencyMaxLatency: 2.0,
+                                 liveBufferLatencyMinRemain: 0.5,
+                                 seekType: 'range',
+                                 enableStashBuffer: true,  // Enable for better buffer management (was false)
+                                 stashInitialBytes: 4 * 1024 * 1024,  // 4MB initial stash
+                                 autoCleanupSourceBuffer: true,
+                                 autoCleanupMaxBackwardDuration: 300,  // Increased from 180
+                                 autoCleanupMinBackwardDuration: 240,  // Increased from 120
+                                 // Add additional buffer safety margin
+                                 bufferDelay: 500,  // Increased from 200ms for smoother playback
+                             };
 
                             mpegPlayer = mpegts.createPlayer({
                                 type: 'mpegts',
@@ -2676,15 +2805,38 @@
                                     return;
                                 }
                                 
-                                // Suppress SourceBuffer errors
+                                // Suppress SourceBuffer errors that are benign
                                 if (info && info.msg && typeof info.msg === 'string') {
                                     const msg = info.msg.toLowerCase();
                                     if (msg.includes('sourcebuffer') || msg.includes('invalidstate')) {
+                                        // Still log at debug level for diagnostics
+                                        console.debug('Suppressed SourceBuffer error:', { type, detail, info });
                                         return;
                                     }
                                 }
-                                console.warn('MPEG-TS error:', type, detail, info);
-                                resolve({ success: false, reason: detail, info });
+                                
+                                // Enhanced error logging with diagnostic data
+                                const stats = mpegPlayer ? mpegPlayer.statisticsInfo : null;
+                                const errorLog = {
+                                    error_type: type,
+                                    detail: detail,
+                                    info: info,
+                                    url: proxyUrl,
+                                    stats: stats ? {
+                                        totalDataReceived: stats.totalDataReceived,
+                                        totalDataDecoded: stats.totalDataDecoded,
+                                        totalPacketsReceived: stats.totalPacketsReceived,
+                                        totalIFrames: stats.totalIFrames,
+                                        totalPFrames: stats.totalPFrames,
+                                        totalBFrames: stats.totalBFrames,
+                                    } : null,
+                                    userAgent: navigator.userAgent,
+                                    timestamp: new Date().toISOString(),
+                                    validation: validationResult // from preflight if available
+                                };
+                                console.warn('MPEG-TS MSE failure:', errorLog);
+                                
+                                resolve({ success: false, reason: detail, info, diagnostic: errorLog });
                             });
                         }, 100);
                     });
@@ -2740,94 +2892,115 @@
                     return { success: false, reason: 'WebCodecs requires full transmuxing' };
                 }
 
-                // Main playback orchestrator with fallbacks
-                (async () => {
-                    let errorTitle = 'Playback Error';
-                    let errorDesc = 'Unable to play this stream.';
-                    let playbackSucceeded = false;
-
-                    // Try Strategy 1: Enhanced mpegts.js
-                    const mpegResult = await tryMpegtsPlayer();
-                    
-                    if (mpegResult.success && mpegPlayer) {
-                        document.getElementById('ch-name-display').innerText = name;
-                        playbackSucceeded = true;
-                        
-                        // Set up error monitoring
-                        const monitorPlayback = () => {
-                            if (!mpegPlayer) return;
-                            const stats = mpegPlayer.statisticsInfo;
-                            if (stats && stats.totalDataReceived < 512) {
-                                // Stream might be empty or stalled
-                                console.warn('Low data received, stream may be stalled');
-                            }
-                        };
-                        setInterval(monitorPlayback, 5000);
-                    } else {
-                        console.log('mpegts.js MSE failed:', mpegResult.reason);
-                        
-                        // Clean up failed player
-                        if (mpegPlayer) {
-                            try { mpegPlayer.pause(); } catch(e) {}
-                            try { mpegPlayer.unload(); } catch(e) {}
-                            try { mpegPlayer.detachMediaElement(); } catch(e) {}
-                            try { mpegPlayer.destroy(); } catch(e) {}
-                            mpegPlayer = null;
-                        }
-                        
-                        // Check for audio codec error (AC-3/EAC-3 not supported in MSE)
-                        if (mpegResult.audioError) {
-                            console.log('AC-3/EAC-3 audio not supported, trying direct playback...');
-                            const directResult = await tryDirectPlayback();
-                            if (directResult.success) {
-                                playbackSucceeded = true;
-                            } else {
-                                errorTitle = 'Audio Codec Not Supported';
-                                errorDesc = 'This stream uses AC-3/Dolby audio which browsers cannot decode. Video may play without sound in VLC.';
-                            }
-                        } else {
-                            // Check for HEVC
-                            const errorStr = (mpegResult.reason || '') + ' ' + (mpegResult.info || '');
-                            const isHEVC = errorStr.toLowerCase().includes('hevc') || 
-                                           errorStr.toLowerCase().includes('hvc1') ||
-                                           errorStr.toLowerCase().includes('hev1');
-                            
-                            if (isHEVC) {
-                                errorTitle = 'HEVC/H.265 Not Supported';
-                                errorDesc = 'This channel uses HEVC video codec which requires Chrome 107+ with hardware support, or an external player.';
-                            } else {
-                                // Check if this might be a proxy/portal error
-                                const errorStrLower = (mpegResult.reason || '').toLowerCase();
-                                const isProxyError = errorStrLower.includes('proxy') || 
-                                                     errorStrLower.includes('redirect') ||
-                                                     errorStrLower.includes('blocked') ||
-                                                     errorStrLower.includes('portal');
-                                
-                                if (isProxyError) {
-                                    errorTitle = 'Stream Connection Error';
-                                    errorDesc = 'The portal blocked or redirected this stream. This may be a portal subscription issue.';
-                                } else {
-                                    // Try Strategy 2: Direct playback
-                                    const directResult = await tryDirectPlayback();
-                                    
-                                    if (directResult.success) {
-                                        playbackSucceeded = true;
-                                    } else {
-                                        console.log('Direct playback failed:', directResult.reason);
-                                        errorDesc = 'Your browser cannot decode this MPEG-TS stream. This is common on Linux due to missing browser codecs. Try using an external player like VLC.';
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (!playbackSucceeded) {
-                        document.getElementById('ch-name-display').innerText = name + ' (' + errorTitle + ')';
-                        document.getElementById('playerErrorTitle').innerText = errorTitle;
-                        document.getElementById('playerErrorDesc').innerText = errorDesc;
-                        document.getElementById('playerErrorOverlay').style.display = 'flex';
-                    }
-                })();
+                 // Main playback orchestrator with retry logic
+                 (async () => {
+                     const maxRetries = 3;
+                     let attempt = 0;
+                     let playbackSucceeded = false;
+                     let finalErrorTitle = 'Playback Error';
+                     let finalErrorDesc = 'Unable to play this stream.';
+                     
+                     while (attempt < maxRetries && !playbackSucceeded) {
+                         attempt++;
+                         console.log(`Playback attempt ${attempt}/${maxRetries}...`);
+                         
+                         // Clean up any previous player instance
+                         if (mpegPlayer) {
+                             try { mpegPlayer.pause(); } catch(e) {}
+                             try { mpegPlayer.unload(); } catch(e) {}
+                             try { mpegPlayer.detachMediaElement(); } catch(e) {}
+                             try { mpegPlayer.destroy(); } catch(e) {}
+                             mpegPlayer = null;
+                         }
+                         
+                         // Try Strategy 1: Enhanced mpegts.js
+                         const mpegResult = await tryMpegtsPlayer();
+                         
+                         if (mpegResult.success && mpegPlayer) {
+                             document.getElementById('ch-name-display').innerText = name;
+                             playbackSucceeded = true;
+                             
+                             // Set up error monitoring
+                             const monitorPlayback = () => {
+                                 if (!mpegPlayer) return;
+                                 const stats = mpegPlayer.statisticsInfo;
+                                 if (stats && stats.totalDataReceived < 512) {
+                                     console.warn('Low data received, stream may be stalled');
+                                 }
+                             };
+                             setInterval(monitorPlayback, 5000);
+                             break; // Success, exit retry loop
+                         } else {
+                             console.log('mpegts.js MSE failed:', mpegResult.reason);
+                             
+                             // Determine error type for retry decision
+                             let shouldRetry = false;
+                             
+                             // Check for audio codec error (AC-3/EAC-3 not supported in MSE)
+                             if (mpegResult.audioError) {
+                                 console.log('AC-3/EAC-3 audio not supported, trying direct playback...');
+                                 const directResult = await tryDirectPlayback();
+                                 if (directResult.success) {
+                                     playbackSucceeded = true;
+                                     break;
+                                 } else {
+                                     finalErrorTitle = 'Audio Codec Not Supported';
+                                     finalErrorDesc = 'This stream uses AC-3/Dolby audio which browsers cannot decode. Video may play without sound in VLC.';
+                                 }
+                             } else {
+                                 // Check for HEVC
+                                 const errorStr = (mpegResult.reason || '') + ' ' + (mpegResult.info || '');
+                                 const isHEVC = errorStr.toLowerCase().includes('hevc') || 
+                                                errorStr.toLowerCase().includes('hvc1') ||
+                                                errorStr.toLowerCase().includes('hev1');
+                                 
+                                 if (isHEVC) {
+                                     finalErrorTitle = 'HEVC/H.265 Not Supported';
+                                     finalErrorDesc = 'This channel uses HEVC video codec which requires Chrome 107+ with hardware support, or an external player.';
+                                 } else {
+                                     // Check if this might be a proxy/portal error
+                                     const errorStrLower = (mpegResult.reason || '').toLowerCase();
+                                     const isProxyError = errorStrLower.includes('proxy') || 
+                                                          errorStrLower.includes('redirect') ||
+                                                          errorStrLower.includes('blocked') ||
+                                                          errorStrLower.includes('portal');
+                                     
+                                     if (isProxyError) {
+                                         finalErrorTitle = 'Stream Connection Error';
+                                         finalErrorDesc = 'The portal blocked or redirected this stream. This may be a portal subscription issue.';
+                                     } else {
+                                         // Try direct playback as fallback
+                                         console.log('Trying direct playback as fallback...');
+                                         const directResult = await tryDirectPlayback();
+                                         
+                                         if (directResult.success) {
+                                             playbackSucceeded = true;
+                                             break;
+                                         } else {
+                                             console.log('Direct playback failed:', directResult.reason);
+                                             finalErrorDesc = 'Your browser cannot decode this MPEG-TS stream. This is common on Linux due to missing browser codecs. Try using an external player like VLC.';
+                                         }
+                                     }
+                                 }
+                             }
+                             
+                             // If not succeeded and we have retries left, wait before retrying
+                             if (!playbackSucceeded && attempt < maxRetries) {
+                                 const delay = attempt * 1000; // 1s, 2s, 3s backoff
+                                 console.log(`Waiting ${delay}ms before retry...`);
+                                 await new Promise(resolve => setTimeout(resolve, delay));
+                             }
+                         }
+                     }
+                     
+                     // Display error only after all retries exhausted
+                     if (!playbackSucceeded) {
+                         document.getElementById('ch-name-display').innerText = name + ' (' + finalErrorTitle + ')';
+                         document.getElementById('playerErrorTitle').innerText = finalErrorTitle;
+                         document.getElementById('playerErrorDesc').innerText = finalErrorDesc;
+                         document.getElementById('playerErrorOverlay').style.display = 'flex';
+                     }
+                 })();
             }
         }
         function toggleSidebar() {

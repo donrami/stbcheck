@@ -16,13 +16,17 @@ class TestSettings:
 
     def test_default_values(self):
         """Test that default values are correctly set."""
-        # Clear any existing env vars that might affect defaults
+        # Clear env vars and ignore .env file to test pure defaults
         with patch.dict(os.environ, {}, clear=True):
-            settings = Settings()
+            settings = Settings(_env_file=None)
 
             assert settings.request_timeout == 10
-            assert settings.stream_timeout == 20
-            assert settings.logo_fetch_timeout == 5
+            assert (
+                settings.stream_timeout == 30
+            )  # Increased from 20 to 30 for slow streams
+            assert (
+                settings.logo_fetch_timeout == 15
+            )  # Increased from 5 to 15 for slow CDNs
             assert settings.max_concurrent_portal_checks == 15
             assert settings.log_level == "INFO"
             assert settings.log_file_max_bytes == 5 * 1024 * 1024  # 5 MB
@@ -32,7 +36,8 @@ class TestSettings:
             )
             assert settings.server_host == "0.0.0.0"
             assert settings.server_port == 8000
-            assert settings.app_version == "1.0.1 - Playback Fixes"
+            assert settings.app_version == "1.1.0 - Organization & Refactoring"
+            assert settings.max_redirects == 10
 
     def test_get_cors_origins_list_wildcard(self):
         """Test get_cors_origins_list returns ['*'] for wildcard."""
@@ -136,6 +141,12 @@ class TestSettings:
         """Test that MAX_CONCURRENT_PORTAL_CHECKS environment variable is loaded."""
         settings = Settings()
         assert settings.max_concurrent_portal_checks == 50
+
+    @patch.dict(os.environ, {"MAX_REDIRECTS": "15"}, clear=False)
+    def test_env_var_max_redirects(self):
+        """Test that MAX_REDIRECTS environment variable is loaded."""
+        settings = Settings()
+        assert settings.max_redirects == 15
 
     def test_settings_case_insensitive(self):
         """Test that settings are case insensitive for field names."""

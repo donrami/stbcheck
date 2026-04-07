@@ -3,9 +3,9 @@ Main FastAPI application initialization.
 """
 
 import os
-import gc
 import logging
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from fastapi import FastAPI, Response, Request
 from fastapi.responses import HTMLResponse
@@ -17,6 +17,9 @@ import uvicorn
 
 from app.config import settings
 from app.routers import portals_router, streams_router
+
+# Path to index.html relative to this file
+INDEX_HTML = Path(__file__).parent.parent / "index.html"
 
 # Configure Logging
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
@@ -117,7 +120,10 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
 
     # Strict Transport Security (if using HTTPS)
-    # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if not os.environ.get("DEV_MODE"):
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
 
     return response
 
@@ -131,8 +137,13 @@ async def favicon():
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
     """Serve the main HTML page."""
-    with open("index.html", "r") as f:
-        return f.read()
+    return INDEX_HTML.read_text(encoding="utf-8")
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "ok", "version": settings.app_version}
 
 
 if __name__ == "__main__":

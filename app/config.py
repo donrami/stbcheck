@@ -31,12 +31,12 @@ class Settings(BaseSettings):
         alias="REQUEST_TIMEOUT",
     )
     stream_timeout: int = Field(
-        default=20,
+        default=30,
         description="Timeout for streaming operations (proxy, concurrent checks)",
         alias="STREAM_TIMEOUT",
     )
     logo_fetch_timeout: int = Field(
-        default=5,
+        default=15,
         description="Timeout for fetching logo images",
         alias="LOGO_FETCH_TIMEOUT",
     )
@@ -123,12 +123,83 @@ class Settings(BaseSettings):
     )
 
     # =============================================================================
+    # Date Parsing Configuration
+    # =============================================================================
+    date_parsing_timezone: str = Field(
+        default="UTC",
+        description="Timezone for parsing expiry dates from portal responses",
+        alias="DATE_PARSING_TIMEZONE",
+    )
+
+    # =============================================================================
+    # Stalker Detection Configuration
+    # =============================================================================
+    stalker_detection_enabled: bool = Field(
+        default=True,
+        description="Enable Stalker portal detection features",
+        alias="STALKER_DETECTION_ENABLED",
+    )
+
+    # =============================================================================
     # Redis Configuration (Optional - for shared logo cache across workers)
     # =============================================================================
     redis_url: str = Field(
         default="",
         description="Redis URL for shared logo cache (e.g., redis://localhost:6379/0). If empty, uses in-memory cache.",
         alias="REDIS_URL",
+    )
+
+    # =============================================================================
+    # Cache Configuration
+    # =============================================================================
+    logo_cache_maxsize: int = Field(
+        default=1000,
+        description="Maximum number of entries in the logo cache",
+        alias="LOGO_CACHE_MAXSIZE",
+    )
+    logo_cache_ttl: int = Field(
+        default=300,
+        description="Time-to-live for logo cache entries (seconds)",
+        alias="LOGO_CACHE_TTL",
+    )
+
+    # =============================================================================
+    # Rate Limiting Configuration
+    # =============================================================================
+    rate_limit_portal_check: str = Field(
+        default="5/minute",
+        description="Rate limit for portal checking endpoint (e.g., '5/minute')",
+        alias="RATE_LIMIT_PORTAL_CHECK",
+    )
+    rate_limit_proxy_logo: str = Field(
+        default="2000/minute",
+        description="Rate limit for logo proxy endpoint",
+        alias="RATE_LIMIT_PROXY_LOGO",
+    )
+    rate_limit_stream_ops: str = Field(
+        default="60/minute",
+        description="Rate limit for streaming operations",
+        alias="RATE_LIMIT_STREAM_OPS",
+    )
+
+    # =============================================================================
+    # Streaming Configuration
+    # =============================================================================
+    stream_chunk_size: int = Field(
+        default=128 * 1024,
+        description="Chunk size for streaming responses (bytes)",
+        alias="STREAM_CHUNK_SIZE",
+    )
+    logo_chunk_size: int = Field(
+        default=4096,
+        description="Chunk size for logo image transfers (bytes)",
+        alias="LOGO_CHUNK_SIZE",
+    )
+
+    max_redirects: int = Field(
+        default=10,
+        description="Maximum number of redirects to follow when proxying streams",
+        alias="MAX_REDIRECTS",
     )
 
 

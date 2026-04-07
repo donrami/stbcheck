@@ -12,10 +12,10 @@ venv/
 .agents/
 .impeccable.md
 skills-lock.json
+.claude
 
 # Dev-only documentation
-AUDIT_SPECIFICATION.md
-TECHNICAL_SPECIFICATION.md
+docs/
 
 # Debug / scratch scripts
 debug_categories.py
@@ -23,9 +23,10 @@ debug_categories.py
 # User data / credentials
 verified_servers.json
 
-# User data / credentials
-verified_servers.json
-
 # Tool caches
 .pytest_cache/
 .ruff_cache/
+.mcp.json
+
+# Repowise
+.repowise
