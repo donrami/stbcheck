@@ -156,14 +156,14 @@ class TestDetectExpiry:
         assert result == "1735689600"
 
     def test_expiry_priority_order_stalker_field_first(self):
-        """Test that Stalker-specific fields have higher priority."""
+        """Test that wrapper-specific fields have higher priority than Stalker fields."""
         data = {
-            "expire_date": "2025-01-01",  # Lower priority
-            "expire_billing_date": "2025-12-31",  # Higher priority (appears earlier in list)
+            "expire_date": "2025-01-01",  # Higher priority (wrapper)
+            "expire_billing_date": "2025-12-31",  # Lower priority (native Stalker)
         }
         result = detect_expiry(data)
-        # Should return expire_billing_date because it's earlier in primary_keys
-        assert result == "2025-12-31"
+        # After reordering, wrapper fields (expire_date) are checked before native ones.
+        assert result == "2025-01-01"
 
     def test_expiry_priority_order_among_standard_fields(self):
         """Test priority ordering among standard fields."""
@@ -565,15 +565,15 @@ class TestDetectExpiryWithSource:
         assert "billing" in source.field_name.lower()
 
     def test_detect_expiry_with_source_priority_stalker_fields(self):
-        """Test that Stalker-specific fields get priority."""
+        """Test that wrapper-specific fields have priority over Stalker fields."""
         data = {
-            "expire_date": "2025-01-01",  # lower priority
-            "expire_billing_date": "2025-12-31",  # higher priority
+            "expire_date": "2025-01-01",  # higher priority (wrapper)
+            "expire_billing_date": "2025-12-31",  # lower priority (Stalker)
         }
         value, source = detect_expiry_with_source(data)
-        # expire_billing_date should be first
-        assert value == "2025-12-31"
-        assert source.field_name == "expire_billing_date"
+        # expire_date should be found first due to priority ordering
+        assert value == "2025-01-01"
+        assert source.field_name == "expire_date"
 
 
 class TestParseExpiryDate:

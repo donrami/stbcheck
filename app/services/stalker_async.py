@@ -11,11 +11,14 @@ import logging
 import re
 import json
 import time
+import random
+import hashlib
 from datetime import datetime
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 import aiohttp
+from yarl import URL
 
 from app.config import settings
 from app.services.base import (
@@ -23,7 +26,8 @@ from app.services.base import (
     get_handshake_paths,
     extract_token,
     unwrap_response,
-    MAG254_USER_AGENT,
+    MAG200_USER_AGENT,
+    MAG250_XUA,
 )
 from app.services.expiry import detect_expiry_with_source
 from app.services.date_utils import parse_expiry_date
@@ -91,6 +95,8 @@ class StalkerClient:
         """
         self.base_url = portal_url.rstrip("/")
         self.mac = mac_address.upper()
+        self.stb_lang = "en"
+        self.timezone = getattr(settings, "default_timezone", "Europe/London")
         self.timeout = timeout
         self._session: Optional[aiohttp.ClientSession] = None
         self._token: Optional[str] = None
@@ -109,17 +115,32 @@ class StalkerClient:
             Dictionary of HTTP headers
         """
         return {
-            "User-Agent": MAG254_USER_AGENT,
+            "User-Agent": MAG200_USER_AGENT,
             "Accept": "*/*",
-            "X-User-Agent": "Model: MAG250; Link:",
-            "Cookie": f"mac={self.mac}",
+            "Accept-Charset": "UTF-8,*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "X-User-Agent": MAG250_XUA,
+            "Referer": f"{self.base_url}/",
+            "Connection": "keep-alive",
         }
 
     async def _ensure_session(self) -> None:
         """Create an aiohttp ClientSession if not already exists."""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout)
+                timeout=aiohttp.ClientTimeout(total=self.timeout),
+                cookie_jar=aiohttp.CookieJar(unsafe=True),
+            )
+            # Initialize base cookies with root path so they're sent for all portal paths
+            base_url_obj = URL(self.base_url)
+            root_url = base_url_obj.with_path("/")
+            self._session.cookie_jar.update_cookies(
+                {
+                    "mac": self.mac,
+                    "stb_lang": self.stb_lang,
+                    "timezone": self.timezone,
+                },
+                root_url,
             )
 
     async def _request(
@@ -240,25 +261,161 @@ class StalkerClient:
         Perform handshake with the portal to obtain an authorization token.
 
         Tries multiple common endpoints to find a working handshake URL.
+        Includes 404 fallback with token+prehash generation.
 
         Returns:
             True if handshake successful and token obtained, False otherwise
         """
+        await self._ensure_session()
         paths_to_try = get_handshake_paths(self.base_url, add_trailing_slash=True)
+        logger.info(f"Trying {len(paths_to_try)} handshake paths for {self.base_url}")
 
         for path in paths_to_try:
-            res = await self._request({"type": "stb", "action": "handshake"}, path=path)
-            if res is None:
+            # First attempt: standard handshake
+            try:
+                logger.debug(f"Attempting handshake with {path}")
+                async with self._session.get(
+                    path,
+                    params={
+                        "type": "stb",
+                        "action": "handshake",
+                        "JsHttpRequest": "1-xml",
+                    },
+                    headers=self._get_headers(),
+                ) as resp:
+                    logger.debug(
+                        f"Handshake response from {path}: status={resp.status}"
+                    )
+                    if resp.status == 200:
+                        try:
+                            data = await resp.json()
+                        except (aiohttp.ContentTypeError, json.JSONDecodeError):
+                            raw_text = await resp.text()
+                            logger.warning(
+                                f"Handshake JSON parse failed from {path}. Raw response (first 1000 chars): {raw_text[:1000]}"
+                            )
+                            cleaned = clean_json_response(raw_text)
+                            try:
+                                data = json.loads(cleaned)
+                            except (json.JSONDecodeError, ValueError):
+                                data = None
+                        if data:
+                            data = unwrap_response(data)
+                            logger.debug(
+                                f"Handshake response data after unwrap from {path}: type={type(data)}, keys={list(data.keys()) if isinstance(data, dict) else 'not a dict'}"
+                            )
+                            token = extract_token(data)
+                            if token:
+                                self._token = token
+                                self._active_path = path
+                                # Set token cookie with root path so it's sent for all paths
+                                try:
+                                    base_url_obj = URL(self.base_url)
+                                    root_url = base_url_obj.with_path("/")
+                                    self._session.cookie_jar.update_cookies(
+                                        {"token": token}, root_url
+                                    )
+                                    logger.info(
+                                        f"Set token cookie for domain {root_url} with path /"
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Failed to set token cookie: {e}")
+                                logger.info(
+                                    f"Handshake successful with {path}, token obtained (len={len(token)})"
+                                )
+                                return True
+                            else:
+                                logger.warning(
+                                    f"Handshake response from {path} had data but extract_token returned None. Data keys: {list(data.keys()) if isinstance(data, dict) else type(data)}. Data sample: {str(data)[:500] if data else 'None'}"
+                                )
+                        else:
+                            logger.warning(
+                                f"No data extracted from handshake response from {path} (data is None after JSON parse/clean)"
+                            )
+                    elif resp.status == 404:
+                        logger.info(
+                            f"Handshake endpoint {path} returned 404, trying fallback"
+                        )
+                        # Generate token+prehash and retry
+                        token_gen = "".join(
+                            random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=32)
+                        )
+                        prehash = hashlib.sha1(token_gen.encode()).hexdigest()
+                        async with self._session.get(
+                            path,
+                            params={
+                                "type": "stb",
+                                "action": "handshake",
+                                "token": token_gen,
+                                "prehash": prehash,
+                                "JsHttpRequest": "1-xml",
+                            },
+                            headers=self._get_headers(),
+                        ) as retry_resp:
+                            logger.info(
+                                f"Fallback handshake response from {path}: status={retry_resp.status}"
+                            )
+                            if retry_resp.status == 200:
+                                try:
+                                    data = await retry_resp.json()
+                                except (aiohttp.ContentTypeError, json.JSONDecodeError):
+                                    raw_text = await retry_resp.text()
+                                    logger.warning(
+                                        f"Fallback handshake JSON parse failed from {path}. Raw response (first 1000 chars): {raw_text[:1000]}"
+                                    )
+                                    cleaned = clean_json_response(raw_text)
+                                    try:
+                                        data = json.loads(cleaned)
+                                    except (json.JSONDecodeError, ValueError):
+                                        data = None
+                                if data:
+                                    data = unwrap_response(data)
+                                    logger.debug(
+                                        f"Fallback handshake response data after unwrap from {path}: type={type(data)}, keys={list(data.keys()) if isinstance(data, dict) else 'not a dict'}"
+                                    )
+                                    token = extract_token(data)
+                                    if token:
+                                        self._token = token
+                                        self._active_path = path
+                                        try:
+                                            base_url_obj = URL(self.base_url)
+                                            root_url = base_url_obj.with_path("/")
+                                            self._session.cookie_jar.update_cookies(
+                                                {"token": token}, root_url
+                                            )
+                                            logger.info(
+                                                f"Set token cookie for domain {root_url} with path /"
+                                            )
+                                        except Exception as e:
+                                            logger.warning(
+                                                f"Failed to set token cookie: {e}"
+                                            )
+                                        logger.info(
+                                            f"Handshake successful with {path} (404 fallback), token obtained (len={len(token)})"
+                                        )
+                                        return True
+                                    else:
+                                        logger.warning(
+                                            f"Fallback handshake response from {path} had data but extract_token returned None. Data keys: {list(data.keys()) if isinstance(data, dict) else type(data)}. Data sample: {str(data)[:500] if data else 'None'}"
+                                        )
+                                else:
+                                    logger.warning(
+                                        f"Fallback handshake: no data extracted from {path} after JSON parse/clean"
+                                    )
+                            else:
+                                logger.info(
+                                    f"Fallback handshake failed for {path} with status {retry_resp.status}"
+                                )
+            except aiohttp.ClientError as e:
+                logger.warning(f"Client error during handshake with {path}: {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"Unexpected error during handshake with {path}: {e}")
                 continue
 
-            token = extract_token(res)
-
-            if token:
-                self._token = token
-                self._active_path = path
-                logger.debug(f"Handshake successful with {path}, token obtained")
-                return True
-
+        logger.error(
+            f"Handshake failed for {self.base_url}: all {len(paths_to_try)} paths exhausted"
+        )
         return False
 
     def _clean_json(self, text: str) -> str:
