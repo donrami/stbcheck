@@ -2492,20 +2492,10 @@
                 });
                 const data = await res.json();
                 if (data.url) {
-                    // Validate the stream before starting it
-                    const urlParams = new URLSearchParams(data.url.split('?')[1]);
-                    const checkRes = await fetch(`/api/check_stream?target=${urlParams.get('target')}&mac=${urlParams.get('mac')}&origin=${urlParams.get('origin')}`);
-                    const checkData = await checkRes.json();
-
-                    if (checkData.status === 'error') {
-                        document.getElementById('ch-name-display').innerText = ch.name + " (" + checkData.message + ")";
-                        document.getElementById('playerErrorTitle').innerText = "Portal Error";
-                        document.getElementById('playerErrorDesc').innerText = checkData.message + ". The portal refused the connection (likely an IP block or region lock).";
-                        document.getElementById('playerErrorOverlay').style.display = 'flex';
-                        return;
-                    }
-
                     // Make the proxy URL absolute for worker compatibility
+                    // Note: We skip /api/check_stream validation because CDN stream tokens
+                    // expire in 3-5 seconds. Adding a validation round-trip causes the
+                    // stream URL to die before playback starts.
                     const absoluteUrl = window.location.origin + data.url;
                     startPlayer(absoluteUrl, ch.name);
                 } else {

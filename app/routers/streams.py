@@ -33,6 +33,37 @@ router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 
+def _get_stream_timeout() -> int:
+    """
+    Get the effective stream timeout based on deployment mode.
+
+    In Vercel-compatible mode, timeouts are reduced to avoid serverless function limits.
+    For long-lived streams (full movies, live TV), use VPS deployment instead.
+
+    Returns:
+        Effective timeout in seconds
+    """
+    base_timeout = settings.stream_timeout
+    if settings.vercel_compatible_mode:
+        return min(base_timeout, 10)  # Cap at 10s for Vercel
+    return base_timeout
+
+
+def _get_vercel_warning_headers() -> dict:
+    """
+    Get warning headers for Vercel-compatible mode.
+
+    Returns:
+        Dictionary of warning headers to include in responses
+    """
+    if settings.vercel_compatible_mode:
+        return {
+            "X-Warning": "Vercel-compatible mode: long streams may be interrupted",
+            "X-Deployment": "vercel-serverless",
+        }
+    return {}
+
+
 def _make_request_with_retry(
     url: str,
     headers: dict,
@@ -205,8 +236,8 @@ class StreamHealthMonitor:
 
 # Initialize global health monitor with configurable settings
 _stream_monitor = StreamHealthMonitor(
-    failure_threshold=5,  # Open after 5 consecutive failures (more tolerant)
-    open_duration=60.0,  # Stay open for 1 minute (shorter blocking period)
+    failure_threshold=settings.circuit_breaker_threshold,
+    open_duration=settings.circuit_breaker_duration,
 )
 
 # Track overall proxy_stream and proxy_logo health
@@ -220,7 +251,9 @@ _stream_proxy_stats = {
 # In-memory cache for stream authentication (session cookies)
 # Key format: "normalized_portal_url:mac_clean" -> {"cookies": dict, "timestamp": float}
 _stream_auth_cache = {}
-_stream_auth_cache_ttl = 600  # 10 minutes
+_stream_auth_cache_ttl = (
+    settings.stream_auth_cache_ttl
+)  # 3 minutes - aligned with WAF token expiration
 _stream_auth_cache_maxsize = 1000
 
 
@@ -234,6 +267,33 @@ def _prune_stream_auth_cache():
         del _stream_auth_cache[k]
     if expired_keys:
         logger.debug(f"Pruned {len(expired_keys)} expired auth cache entries")
+
+
+def _invalidate_stream_auth_cache(portal_url: str, mac: str) -> bool:
+    """
+    Invalidate cached session authentication data for a specific portal+mac.
+
+    This should be called when receiving 401 errors during streaming, as it
+    indicates the WAF has expired the session token.
+
+    Args:
+        portal_url: The portal base URL
+        mac: MAC address
+
+    Returns:
+        True if an entry was removed, False if not found
+    """
+    if not portal_url:
+        return False
+    normalized_url = portal_url.rstrip("/")
+    mac_clean = mac.upper().replace(":", "")
+    cache_key = f"{normalized_url}:{mac_clean}"
+
+    if cache_key in _stream_auth_cache:
+        del _stream_auth_cache[cache_key]
+        logger.info(f"Invalidated auth cache for {cache_key}")
+        return True
+    return False
 
 
 def _get_stream_auth_data(portal_url: str, mac: str) -> dict:
@@ -269,13 +329,6 @@ def _get_stream_auth_data(portal_url: str, mac: str) -> dict:
             del _stream_auth_cache[cache_key]
             logger.debug(f"Auth cache entry expired for {cache_key}")
     return {}
-
-
-# In-memory cache for stream authentication (session cookies)
-# Maps auth_id -> {"cookies": dict, "timestamp": float}
-_stream_auth_cache: Dict[str, dict] = {}
-_stream_auth_cache_ttl = 600  # 10 minutes
-_stream_auth_cache_maxsize = 1000
 
 
 def _get_cached_logo(target: str):
@@ -736,7 +789,7 @@ def check_stream(
         r = _make_request_with_retry(
             real_url,
             headers=headers,
-            timeout=settings.stream_timeout,
+            timeout=_get_stream_timeout(),
             verify=settings.verify_ssl,
             max_retries=3,
             initial_delay=1.0,
@@ -839,7 +892,7 @@ def proxy_stream(
             return Response(
                 status_code=503,
                 content=b"",
-                headers={"Retry-After": "300"},  # Suggest retry after 5 minutes
+                headers={"Retry-After": str(settings.circuit_breaker_duration)},
             )
 
         # Normalize MAC address - try both with and without colons
@@ -901,7 +954,7 @@ def proxy_stream(
                 r = _make_request_with_retry(
                     real_url,
                     headers=_headers,
-                    timeout=settings.stream_timeout,
+                    timeout=_get_stream_timeout(),
                     verify=settings.verify_ssl,
                     max_retries=3,
                     initial_delay=1.0,
@@ -995,7 +1048,7 @@ def proxy_stream(
                                 r = _make_request_with_retry(
                                     redirect_location,
                                     headers=_headers,
-                                    timeout=settings.stream_timeout,
+                                    timeout=_get_stream_timeout(),
                                     verify=settings.verify_ssl,
                                     max_retries=3,
                                     initial_delay=1.0,
@@ -1033,10 +1086,12 @@ def proxy_stream(
                         real_url, is_error=True, use_domain=True
                     )
                     if r.status_code == 401:
+                        # Invalidate the cached session and return error so frontend can retry
+                        _invalidate_stream_auth_cache(referer, mac)
                         resp_headers = dict(r.headers)
                         logger.warning(
                             f"401 Unauthorized during proxy_stream for {real_url}. "
-                            f"Headers sent: {headers}, Response headers: {resp_headers}"
+                            f"Invalidated auth cache. Headers sent: {headers}, Response headers: {resp_headers}"
                         )
                         try:
                             body_start = r.raw.read(1024)
@@ -1089,21 +1144,39 @@ def proxy_stream(
                 _stream_monitor.record_stream_failure(
                     real_url, is_error=True, use_domain=True
                 )
-                logger.error(
-                    f"[proxy_stream] Streaming exception: {type(e).__name__}: {e}"
-                )
+                # Invalidate auth cache on streaming exceptions too - could be auth-related
+                error_str = str(e).lower()
+                if (
+                    "401" in error_str
+                    or "unauthorized" in error_str
+                    or "auth" in error_str
+                ):
+                    _invalidate_stream_auth_cache(referer, mac)
+                    logger.warning(
+                        f"[proxy_stream] Auth-related exception: {type(e).__name__}: {e}. "
+                        f"Invalidated auth cache for retry."
+                    )
+                else:
+                    logger.error(
+                        f"[proxy_stream] Streaming exception: {type(e).__name__}: {e}"
+                    )
                 if r:
                     r.close()
                 return
 
+        vercel_headers = _get_vercel_warning_headers()
+        response_headers = {
+            "Accept-Ranges": "bytes",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-cache",
+            # Note: 401 handling invalidates auth cache so next get_link call gets fresh session
+        }
+        response_headers.update(vercel_headers)
+
         return StreamingResponse(
             iterfile(),
             media_type="video/MP2T",
-            headers={
-                "Accept-Ranges": "bytes",
-                "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "no-cache",
-            },
+            headers=response_headers,
         )
     except Exception as e:
         logger.error(f"Proxy stream setup error: {e}")
@@ -1122,3 +1195,50 @@ def health_circuits(request: Request):
     stats = _stream_monitor.get_stats()
     stats.update(_stream_proxy_stats.copy())
     return stats
+
+
+@router.post("/api/health/circuits/reset")
+@limiter.limit("10/minute")
+def reset_circuits(request: Request, domain: Optional[str] = None):
+    """
+    Reset circuit breaker for a specific domain or all domains.
+
+    Use this when streams are failing with 503 due to circuit breaker being open.
+
+    Args:
+        domain: Optional specific domain to reset. If omitted, resets all circuits.
+
+    Returns:
+        Dictionary with reset status
+    """
+    if domain:
+        # Reset specific domain circuit
+        # The circuit key is the netloc (domain:port)
+        circuit_key = domain
+        if circuit_key in _stream_monitor.circuits:
+            circuit = _stream_monitor.circuits[circuit_key]
+            circuit.consecutive_failures = 0
+            circuit.open_until = 0.0
+            logger.info(f"Circuit breaker reset for domain: {domain}")
+            return {
+                "status": "success",
+                "message": f"Circuit reset for {domain}",
+                "domain": domain,
+            }
+        else:
+            return {
+                "status": "not_found",
+                "message": f"No circuit found for {domain}",
+                "domain": domain,
+            }
+    else:
+        # Reset all circuits
+        for circuit in _stream_monitor.circuits.values():
+            circuit.consecutive_failures = 0
+            circuit.open_until = 0.0
+        logger.info("All circuit breakers reset")
+        return {
+            "status": "success",
+            "message": "All circuits reset",
+            "reset_count": len(_stream_monitor.circuits),
+        }
