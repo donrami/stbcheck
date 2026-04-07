@@ -22,6 +22,7 @@ from slowapi.util import get_remote_address
 from app.config import settings
 from app.models import StreamRequest
 from app.services.stalker_async import StalkerClient
+from app.services.base import MAG200_USER_AGENT, MAG250_XUA
 from app.services.url_validator import is_safe_url, is_safe_url_with_redirect_check
 from app.services.text_parser import clean_stalker_url
 
@@ -30,6 +31,59 @@ router = APIRouter()
 
 # Rate limiter instance
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _make_request_with_retry(
+    url: str,
+    headers: dict,
+    timeout: int,
+    verify: bool,
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    stream: bool = True,
+    allow_redirects: bool = False,
+) -> requests.Response:
+    """
+    Make HTTP request with exponential backoff retry on connection errors.
+    Retries on: ConnectionError, ConnectionResetError, Timeout, ChunkedEncodingError.
+    Does NOT retry on HTTP error status codes (4xx, 5xx) - those are handled by caller.
+    """
+    last_exception = None
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(
+                url,
+                headers=headers,
+                timeout=timeout,
+                verify=verify,
+                stream=stream,
+                allow_redirects=allow_redirects,
+            )
+            return resp
+        except (
+            RequestsConnectionError,
+            Timeout,
+            ChunkedEncodingError,
+            ConnectionResetError,
+            OSError,
+        ) as e:
+            last_exception = e
+            if attempt < max_retries - 1:
+                delay = initial_delay * (2**attempt)
+                logger.warning(
+                    f"Request to {url} failed with {type(e).__name__}: {e}. "
+                    f"Retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(delay)
+            else:
+                logger.error(
+                    f"Request to {url} failed after {max_retries} attempts: {e}"
+                )
+                raise
+    if last_exception:
+        raise last_exception
+    raise RuntimeError("Retry loop completed without result")
+
 
 # In-memory cache for logo responses with size limit and TTL
 _logo_cache: TTLCache = TTLCache(
@@ -514,9 +568,26 @@ async def get_link(request: Request, req: StreamRequest):
     """
     async with StalkerClient(req.url, req.mac) as client:
         logger.info(f"get_link called: url={req.url}, mac={req.mac}, cmd={req.cmd}")
-        handshake_success = await client.handshake()
-        logger.info(f"Handshake result: {handshake_success}")
-        if handshake_success:
+
+        # Determine if cmd is already a full stream URL (optionally prefixed with "ffmpeg ")
+        raw_cmd = req.cmd.strip() if req.cmd else ""
+        direct_url = None
+        if raw_cmd:
+            lower_cmd = raw_cmd.lower()
+            if lower_cmd.startswith("ffmpeg "):
+                direct_url = raw_cmd[7:].strip()
+            elif lower_cmd.startswith("http://") or lower_cmd.startswith("https://"):
+                direct_url = raw_cmd
+
+        if direct_url:
+            logger.info(f"Direct stream URL detected, skipping handshake/create_link")
+            target = direct_url
+        else:
+            handshake_success = await client.handshake()
+            logger.info(f"Handshake result: {handshake_success}")
+            if not handshake_success:
+                logger.warning(f"Handshake failed for {req.url} with MAC {req.mac}")
+                raise HTTPException(status_code=400, detail="Portal handshake failed")
             res = await client.create_link(req.cmd)
             logger.info(f"create_link result: {res}")
             target = None
@@ -524,52 +595,56 @@ async def get_link(request: Request, req: StreamRequest):
                 target = res
             elif isinstance(res, dict) and "cmd" in res:
                 target = res["cmd"]
-
             logger.info(f"Extracted target: {target}")
-            if target:
-                clean_url = clean_stalker_url(target)
-                logger.info(f"Cleaned URL: {clean_url}")
-                if not clean_url:
-                    raise HTTPException(
-                        status_code=400, detail="Generated stream link is empty"
-                    )
 
-                # Extract and cache session cookies for this portal+MAC
-                # Exclude 'token' to avoid cross-domain auth issues; only keep mac and other base cookies
-                cookie_dict = {}
-                try:
-                    if client._session:
-                        cookies_for_domain = client._session.cookie_jar.filter_cookies(
-                            client.base_url
-                        )
-                        for name, morsel in cookies_for_domain.items():
-                            if name.lower() != "token":  # Exclude token cookie
-                                cookie_dict[name] = morsel.value
-                except Exception as e:
-                    logger.warning(f"Failed to extract cookies from StalkerClient: {e}")
+        if not target:
+            raise HTTPException(
+                status_code=400, detail="Could not create link or link not found"
+            )
 
-                if cookie_dict:
-                    # Normalize portal URL and MAC for cache key
-                    normalized_url = req.url.rstrip("/")
-                    mac_clean = req.mac.upper().replace(":", "")
-                    cache_key = f"{normalized_url}:{mac_clean}"
-                    _stream_auth_cache[cache_key] = {
-                        "cookies": cookie_dict,
-                        "timestamp": time.time(),
-                    }
-                    logger.info(
-                        f"Cached {len(cookie_dict)} session cookies for portal {normalized_url} with MAC {mac_clean}"
-                    )
-                    # Prune if cache over capacity
-                    if len(_stream_auth_cache) > _stream_auth_cache_maxsize:
-                        _prune_stream_auth_cache()
+        clean_url = clean_stalker_url(target, portal_url=req.url)
+        logger.info(f"Cleaned URL: {clean_url}")
+        if not clean_url:
+            raise HTTPException(
+                status_code=400, detail="Generated stream link is empty"
+            )
 
-                b64_url = base64.b64encode(clean_url.encode()).decode()
-                b64_origin = base64.b64encode(req.url.encode()).decode()
-                proxy_url = f"/api/proxy_stream?target={b64_url}&mac={req.mac}&origin={b64_origin}"
-                return {"url": proxy_url}
-        else:
-            logger.warning(f"Handshake failed for {req.url} with MAC {req.mac}")
+        # Extract and cache session cookies for this portal+MAC
+        # Exclude 'token' to avoid cross-domain auth issues; only keep mac and other base cookies
+        cookie_dict = {}
+        try:
+            if client._session:
+                cookies_for_domain = client._session.cookie_jar.filter_cookies(
+                    client.base_url
+                )
+                for name, morsel in cookies_for_domain.items():
+                    if name.lower() != "token":  # Exclude token cookie
+                        cookie_dict[name] = morsel.value
+        except Exception as e:
+            logger.warning(f"Failed to extract cookies from StalkerClient: {e}")
+
+        if cookie_dict:
+            # Normalize portal URL and MAC for cache key
+            normalized_url = req.url.rstrip("/")
+            mac_clean = req.mac.upper().replace(":", "")
+            cache_key = f"{normalized_url}:{mac_clean}"
+            _stream_auth_cache[cache_key] = {
+                "cookies": cookie_dict,
+                "timestamp": time.time(),
+            }
+            logger.info(
+                f"Cached {len(cookie_dict)} session cookies for portal {normalized_url} with MAC {mac_clean}"
+            )
+            # Prune if cache over capacity
+            if len(_stream_auth_cache) > _stream_auth_cache_maxsize:
+                _prune_stream_auth_cache()
+
+        b64_url = base64.b64encode(clean_url.encode()).decode()
+        b64_origin = base64.b64encode(req.url.encode()).decode()
+        proxy_url = (
+            f"/api/proxy_stream?target={b64_url}&mac={req.mac}&origin={b64_origin}"
+        )
+        return {"url": proxy_url}
     raise HTTPException(
         status_code=400, detail="Could not create link or link not found"
     )
@@ -618,10 +693,11 @@ def check_stream(
             )
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
-            "X-User-Agent": "model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c",
+            "User-Agent": MAG200_USER_AGENT,
+            "X-User-Agent": MAG250_XUA,
             "Accept": "*/*",
             "Accept-Charset": "UTF-8,*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
             "Connection": "keep-alive",
         }
 
@@ -636,48 +712,82 @@ def check_stream(
         else:
             headers["Cookie"] = f"mac={mac_normalized}"
 
+        # Referer should always be the portal URL to bypass WAF on streaming servers
         if referer:
             headers["Referer"] = referer
-        else:
+        elif origin:
+            # origin is base64-encoded portal URL, decode and use as referer
+            try:
+                portal_url = base64.b64decode(origin).decode("utf-8", errors="ignore")
+                headers["Referer"] = portal_url.rstrip("/") + "/"
+            except (binascii.Error, ValueError, TypeError):
+                pass
+        # Last resort fallback: use stream URL domain
+        if "Referer" not in headers:
             parsed = urlparse(real_url)
             headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
 
         # Some portals require a Range header to consider the request valid for streaming
-        headers["Range"] = "bytes=0-1023"
+        # Use a small range (64 bytes) to minimize data transfer and avoid triggering upstream issues
+        headers["Range"] = "bytes=0-63"
 
         # Just a minimal GET to check the status
-        with requests.get(
+        r = None
+        r = _make_request_with_retry(
             real_url,
             headers=headers,
-            stream=True,
             timeout=settings.stream_timeout,
             verify=settings.verify_ssl,
+            max_retries=3,
+            initial_delay=1.0,
+            stream=True,
             allow_redirects=True,
-        ) as r:
-            logger.info(f"Stream check for {real_url}: {r.status_code}")
-            if r.status_code == 401:
-                # Log detailed auth failure info
-                resp_headers = dict(r.headers)
-                logger.warning(
-                    f"401 Unauthorized during check_stream for {real_url}. "
-                    f"Headers sent: {headers}, Response headers: {resp_headers}"
-                )
-                try:
-                    body_start = r.raw.read(1024)
-                    if body_start:
-                        logger.warning(f"401 body (first 1KB): {body_start[:200]}")
-                except Exception:
-                    pass
-            return {
-                "status": "success" if r.status_code < 400 else "error",
-                "code": r.status_code,
-                "message": f"Portal returned {r.status_code}"
-                if r.status_code >= 400
-                else "OK",
-            }
+        )
+        logger.info(f"Stream check for {real_url}: {r.status_code}")
+        if r.status_code == 401:
+            # Log detailed auth failure info
+            resp_headers = dict(r.headers)
+            logger.warning(
+                f"401 Unauthorized during check_stream for {real_url}. "
+                f"Headers sent: {headers}, Response headers: {resp_headers}"
+            )
+            try:
+                body_start = r.raw.read(1024)
+                if body_start:
+                    logger.warning(f"401 body (first 1KB): {body_start[:200]}")
+            except Exception:
+                pass
+
+        # Record circuit breaker status
+        if r.status_code < 400:
+            _stream_monitor.record_stream_success(real_url, use_domain=True)
+        else:
+            _stream_monitor.record_stream_failure(
+                real_url, is_error=True, use_domain=True
+            )
+
+        result = {
+            "status": "success" if r.status_code < 400 else "error",
+            "code": r.status_code,
+            "message": f"Portal returned {r.status_code}"
+            if r.status_code >= 400
+            else "OK",
+        }
+        return result
     except Exception as e:
         logger.error(f"Stream check error: {e}")
+        if "real_url" in locals():
+            _stream_monitor.record_stream_failure(
+                real_url, is_error=True, use_domain=True
+            )
         return {"status": "error", "code": 500, "message": str(e)}
+    finally:
+        # Close the response if it was created
+        if "r" in locals() and r is not None:
+            try:
+                r.close()
+            except Exception:
+                pass
 
 
 @router.get("/api/proxy_stream")
@@ -738,12 +848,13 @@ def proxy_stream(
         if ":" not in mac_clean and len(mac_clean) == 12:
             mac_with_colons = ":".join([mac_clean[i : i + 2] for i in range(0, 12, 2)])
 
-        # Build base headers
+        # Build base headers - must match exactly what stalker_async.py sends to bypass WAF
         headers = {
-            "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
-            "X-User-Agent": "model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c",
+            "User-Agent": MAG200_USER_AGENT,
+            "X-User-Agent": MAG250_XUA,
             "Accept": "*/*",
             "Accept-Charset": "UTF-8,*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
             "Connection": "keep-alive",
         }
 
@@ -758,10 +869,18 @@ def proxy_stream(
         else:
             headers["Cookie"] = f"mac={mac_with_colons}"
 
+        # Referer should always be the portal URL to bypass WAF on streaming servers
         if referer:
             headers["Referer"] = referer
-        else:
-            # Fallback: Use the portal root as referer
+        elif origin:
+            # origin is base64-encoded portal URL, decode and use as referer
+            try:
+                portal_url = base64.b64decode(origin).decode("utf-8", errors="ignore")
+                headers["Referer"] = portal_url.rstrip("/") + "/"
+            except (binascii.Error, ValueError, TypeError):
+                pass
+        # Last resort fallback: use stream URL domain
+        if "Referer" not in headers:
             parsed = urlparse(real_url)
             headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
 
@@ -771,175 +890,211 @@ def proxy_stream(
 
         def iterfile():
             first_chunk_yielded = False
+            r = None
+            # Create a mutable reference to headers so inner assignments don't create new locals
+            _headers = headers
             try:
-                # Use requests.get directly to avoid session cookie pollution
-                with requests.get(
+                logger.info(f"[proxy_stream] Initiating upstream request to {real_url}")
+                logger.info(f"[proxy_stream] Request headers: {_headers}")
+
+                # Initial request with retry (no auto-redirect)
+                r = _make_request_with_retry(
                     real_url,
-                    headers=headers,
-                    stream=True,
+                    headers=_headers,
                     timeout=settings.stream_timeout,
                     verify=settings.verify_ssl,
-                    allow_redirects=False,  # Handle redirects manually for safety
-                ) as r:
-                    current_url = real_url
-                    redirect_count = 0
-                    max_redirects = (
-                        settings.max_redirects
-                    )  # Prevent infinite redirect loops
+                    max_retries=3,
+                    initial_delay=1.0,
+                    stream=True,
+                    allow_redirects=False,
+                )
+                logger.info(
+                    f"[proxy_stream] Upstream response: status={r.status_code}, headers={dict(r.headers)}"
+                )
 
-                    # Handle redirects manually - follow same-origin redirects for safety
-                    while redirect_count < max_redirects:
-                        is_redirect = r.is_redirect
-                        if isinstance(is_redirect, bool) and is_redirect:
-                            redirect_location = r.headers.get("Location")
-                            if isinstance(redirect_location, str) and redirect_location:
-                                parsed_redirect = urlparse(redirect_location)
-                                parsed_current = urlparse(current_url)
+                current_url = real_url
+                redirect_count = 0
+                max_redirects = settings.max_redirects
 
-                                # Check if redirect is safe to follow
-                                def is_safe_redirect(redirect_url, original_url):
-                                    """Allow redirects to same domain, subdomains, or common CDN patterns."""
-                                    p_redirect = urlparse(redirect_url)
-                                    p_original = urlparse(original_url)
+                # Handle redirects manually - with retry for each hop
+                while redirect_count < max_redirects:
+                    if r.is_redirect:
+                        redirect_location = r.headers.get("Location")
+                        if redirect_location:
+                            parsed_redirect = urlparse(redirect_location)
 
-                                    # Same domain or subdomain - ALLOW
-                                    if p_redirect.netloc == p_original.netloc:
-                                        return True
+                            # Check if redirect is safe
+                            def is_safe_redirect(redirect_url, original_url):
+                                """Allow redirects to same domain, subdomains, or common CDN patterns."""
+                                p_redirect = urlparse(redirect_url)
+                                p_original = urlparse(original_url)
 
-                                    # Subdomain check (e.g., cdn.provider.com -> provider.com)
-                                    redirect_base = ".".join(
-                                        p_redirect.netloc.split(".")[-2:]
-                                    )
-                                    original_base = ".".join(
-                                        p_original.netloc.split(".")[-2:]
-                                    )
-                                    if (
-                                        redirect_base == original_base
-                                        and p_redirect.netloc.endswith(original_base)
-                                    ):
-                                        return True
+                                # Same domain or subdomain - ALLOW
+                                if p_redirect.netloc == p_original.netloc:
+                                    return True
 
-                                    # Allow common CDN domains that IPTV portals use
-                                    cdn_patterns = [
-                                        "akamai",
-                                        "cloudfront",
-                                        "fastly",
-                                        "cdn",
-                                        "stream",
-                                        "video",
-                                        "media",
-                                        "assets",
-                                        "cache",
-                                        "direct",
-                                        "edge",
-                                        "global",
-                                        "content",
-                                        "delivery",
-                                    ]
-                                    redirect_lower = p_redirect.netloc.lower()
-                                    for pattern in cdn_patterns:
-                                        if pattern in redirect_lower:
-                                            return True
-
-                                    # Block private IP ranges and internal networks
-                                    try:
-                                        # Check if redirect hostname is a private IP
-                                        redirect_ip = p_redirect.hostname
-                                        if redirect_ip:
-                                            ip = ipaddress.ip_address(redirect_ip)
-                                            if not ip.is_global:
-                                                return False
-                                    except (ValueError, AttributeError):
-                                        # Not an IP address, allow it
-                                        pass
-
-                                    # Allow if original URL is already to a public IP
-                                    # and redirect is to same IP or nearby
-                                    return True  # Be permissive for IPTV streams
-
-                                if is_safe_redirect(redirect_location, current_url):
-                                    redirect_count += 1
-                                    logger.info(
-                                        f"Following redirect {redirect_count} to: {redirect_location}"
-                                    )
-                                    # Make new request with same headers
-                                    r.close()
-                                    r = requests.get(
-                                        redirect_location,
-                                        headers=headers,
-                                        stream=True,
-                                        timeout=settings.stream_timeout,
-                                        verify=settings.verify_ssl,
-                                        allow_redirects=False,
-                                    )
-                                    current_url = redirect_location
-                                    continue
-                                else:
-                                    # Potentially unsafe redirect - block
-                                    logger.warning(
-                                        f"Blocked unsafe redirect from {real_url} to {redirect_location} "
-                                        f"from IP {request.client.host}"
-                                    )
-                                    # Record failure for this URL
-                                    _stream_monitor.record_stream_failure(
-                                        real_url, is_error=True, use_domain=True
-                                    )
-                                    yield b"Proxy Error: Redirect to external URL blocked"
-                                    r.close()
-                                    return
-                        break  # Not a redirect, proceed normally
-
-                    upstream_type = r.headers.get("Content-Type", "").lower()
-                    real_url_str = str(real_url)
-                    logger.info(
-                        f"Portal response: {r.status_code} - Type: {upstream_type} - URL: {real_url_str}"
-                    )
-
-                    if r.status_code >= 400:
-                        # Record failure before yielding error
-                        _stream_monitor.record_stream_failure(
-                            real_url, is_error=True, use_domain=True
-                        )
-                        if r.status_code == 401:
-                            # Log detailed auth failure info
-                            resp_headers = dict(r.headers)
-                            logger.warning(
-                                f"401 Unauthorized during proxy_stream for {real_url}. "
-                                f"Headers sent: {headers}, Response headers: {resp_headers}"
-                            )
-                            try:
-                                body_start = r.raw.read(1024)
-                                if body_start:
-                                    logger.warning(
-                                        f"401 body (first 1KB): {body_start[:200]}"
-                                    )
-                            except Exception:
-                                pass
-                        yield f"Proxy Error: Portal returned {r.status_code}".encode()
-                        r.close()
-                        return
-
-                    for chunk in r.iter_content(chunk_size=settings.stream_chunk_size):
-                        if chunk:
-                            yield chunk
-                            if not first_chunk_yielded:
-                                # Record success on first data chunk
-                                _stream_monitor.record_stream_success(
-                                    real_url, use_domain=True
+                                # Subdomain check (e.g., cdn.provider.com -> provider.com)
+                                redirect_base = ".".join(
+                                    p_redirect.netloc.split(".")[-2:]
                                 )
-                                _stream_proxy_stats["total_requests"] += 1
-                                _stream_proxy_stats["successful"] += 1
-                                first_chunk_yielded = True
+                                original_base = ".".join(
+                                    p_original.netloc.split(".")[-2:]
+                                )
+                                if (
+                                    redirect_base == original_base
+                                    and p_redirect.netloc.endswith(original_base)
+                                ):
+                                    return True
+
+                                # Allow common CDN domains that IPTV portals use
+                                cdn_patterns = [
+                                    "akamai",
+                                    "cloudfront",
+                                    "fastly",
+                                    "cdn",
+                                    "stream",
+                                    "video",
+                                    "media",
+                                    "assets",
+                                    "cache",
+                                    "direct",
+                                    "edge",
+                                    "global",
+                                    "content",
+                                    "delivery",
+                                ]
+                                if any(
+                                    pattern in p_redirect.netloc.lower()
+                                    for pattern in cdn_patterns
+                                ):
+                                    return True
+
+                                # Block private IP ranges and internal networks
+                                try:
+                                    redirect_ip = p_redirect.hostname
+                                    if redirect_ip:
+                                        ip = ipaddress.ip_address(redirect_ip)
+                                        if not ip.is_global:
+                                            return False
+                                except (ValueError, AttributeError):
+                                    pass
+
+                                # Allow if original URL is already to a public IP
+                                return True  # Be permissive for IPTV streams
+
+                            if is_safe_redirect(redirect_location, current_url):
+                                redirect_count += 1
+                                logger.info(
+                                    f"Following redirect {redirect_count} to: {redirect_location}"
+                                )
+                                r.close()
+                                # Update Referer to the URL that initiated this redirect
+                                # This is critical for WAF on streaming servers
+                                _headers = dict(_headers)  # Copy headers
+                                _headers["Referer"] = current_url
+                                r = _make_request_with_retry(
+                                    redirect_location,
+                                    headers=_headers,
+                                    timeout=settings.stream_timeout,
+                                    verify=settings.verify_ssl,
+                                    max_retries=3,
+                                    initial_delay=1.0,
+                                    stream=True,
+                                    allow_redirects=False,
+                                )
+                                current_url = redirect_location
+                                continue
+                            else:
+                                logger.warning(
+                                    f"Blocked unsafe redirect from {real_url} to {redirect_location} from IP {request.client.host}"
+                                )
+                                _stream_monitor.record_stream_failure(
+                                    real_url, is_error=True, use_domain=True
+                                )
+                                if r:
+                                    r.close()
+                                return
                         else:
                             break
+                    else:
+                        break
+
+                # Log final response
+                upstream_type = r.headers.get("Content-Type", "").lower()
+                content_length = r.headers.get("Content-Length", "unknown")
+                logger.info(
+                    f"[proxy_stream] Upstream response: status={r.status_code}, "
+                    f"Content-Type={upstream_type}, Content-Length={content_length}"
+                )
+
+                # Handle error status codes
+                if r.status_code >= 400:
+                    _stream_monitor.record_stream_failure(
+                        real_url, is_error=True, use_domain=True
+                    )
+                    if r.status_code == 401:
+                        resp_headers = dict(r.headers)
+                        logger.warning(
+                            f"401 Unauthorized during proxy_stream for {real_url}. "
+                            f"Headers sent: {headers}, Response headers: {resp_headers}"
+                        )
+                        try:
+                            body_start = r.raw.read(1024)
+                            if body_start:
+                                logger.warning(
+                                    f"401 body (first 1KB): {body_start[:200]}"
+                                )
+                        except Exception:
+                            pass
                     r.close()
+                    return
+
+                # Stream content
+                chunk_count = 0
+                total_bytes = 0
+                first_chunk_logged = False
+                for chunk in r.iter_content(chunk_size=settings.stream_chunk_size):
+                    if chunk:
+                        chunk_size = len(chunk)
+                        chunk_count += 1
+                        total_bytes += chunk_size
+                        if not first_chunk_logged:
+                            # Log first chunk details for debugging
+                            first_chunk_logged = True
+                            hex_preview = chunk[:24].hex()
+                            logger.info(
+                                f"[proxy_stream] First chunk: size={chunk_size} bytes, "
+                                f"hex preview: {hex_preview}, total so far={total_bytes}"
+                            )
+                        else:
+                            logger.debug(
+                                f"[proxy_stream] Chunk #{chunk_count}: size={chunk_size} bytes, total={total_bytes}"
+                            )
+                        yield chunk
+                        if not first_chunk_yielded:
+                            _stream_monitor.record_stream_success(
+                                real_url, use_domain=True
+                            )
+                            _stream_proxy_stats["total_requests"] += 1
+                            _stream_proxy_stats["successful"] += 1
+                            first_chunk_yielded = True
+                    else:
+                        logger.debug("[proxy_stream] Received empty chunk, breaking")
+                        break
+                logger.info(
+                    f"[proxy_stream] Stream ended: chunks={chunk_count}, total_bytes={total_bytes}"
+                )
+                r.close()
             except Exception as e:
-                # Record failure on any exception during streaming setup
                 _stream_monitor.record_stream_failure(
                     real_url, is_error=True, use_domain=True
                 )
-                logger.error(f"Streaming error: {e}")
-                yield f"Proxy Stream Error: {e}".encode()
+                logger.error(
+                    f"[proxy_stream] Streaming exception: {type(e).__name__}: {e}"
+                )
+                if r:
+                    r.close()
+                return
 
         return StreamingResponse(
             iterfile(),
