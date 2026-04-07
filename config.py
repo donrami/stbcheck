@@ -31,12 +31,12 @@ class Settings(BaseSettings):
         alias="REQUEST_TIMEOUT",
     )
     stream_timeout: int = Field(
-        default=20,
+        default=30,
         description="Timeout for streaming operations (proxy, concurrent checks)",
         alias="STREAM_TIMEOUT",
     )
     logo_fetch_timeout: int = Field(
-        default=5,
+        default=15,
         description="Timeout for fetching logo images",
         alias="LOGO_FETCH_TIMEOUT",
     )
