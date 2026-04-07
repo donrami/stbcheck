@@ -36,7 +36,7 @@ class TestSettings:
             )
             assert settings.server_host == "0.0.0.0"
             assert settings.server_port == 8000
-            assert settings.app_version == "1.1.0 - Organization & Refactoring"
+            assert settings.app_version == "1.0.1 - Playback Fixes"
             assert settings.max_redirects == 10
 
     def test_get_cors_origins_list_wildcard(self):

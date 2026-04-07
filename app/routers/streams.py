@@ -512,13 +512,25 @@ def check_stream(request: Request, target: str, mac: str, origin: Optional[str] 
         if not is_safe_url(real_url):
             return {"status": "error", "code": 403, "message": "Unsafe URL"}
 
+        # Normalize MAC address to standard format (uppercase with colons)
+        # Most portals expect MAC in format 00:1A:79:B0:35:FB
+        mac_normalized = mac.upper()
+        if len(mac_normalized) == 12 and ":" not in mac_normalized:
+            # Convert 001A79B035FB to 00:1A:79:B0:35:FB
+            mac_normalized = ":".join(
+                [mac_normalized[i : i + 2] for i in range(0, 12, 2)]
+            )
+
         headers = {
             "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
             "X-User-Agent": "model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c",
-            "Cookie": f"mac={mac.upper()}",
             "Accept": "*/*",
+            "Accept-Charset": "UTF-8,*;q=0.8",
             "Connection": "keep-alive",
         }
+
+        # Set MAC cookie (standard format)
+        headers["Cookie"] = f"mac={mac_normalized}"
 
         if referer:
             headers["Referer"] = referer
@@ -526,15 +538,40 @@ def check_stream(request: Request, target: str, mac: str, origin: Optional[str] 
             parsed = urlparse(real_url)
             headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
 
-        # Just a HEAD or a minimal GET to check the status
-        with requests.get(
-            real_url,
-            headers=headers,
-            stream=True,
-            timeout=settings.request_timeout,
-            verify=settings.verify_ssl,
-        ) as r:
+        # Some portals require a Range header to consider the request valid for streaming
+        # Adding a small range to mimic a real player's initial request
+        headers["Range"] = "bytes=0-1023"
+
+        # Just a minimal GET to check the status
+        with (
+            requests.get(
+                real_url,
+                headers=headers,
+                stream=True,
+                timeout=settings.stream_timeout,  # Use stream_timeout for consistency with proxy
+                verify=settings.verify_ssl,
+                allow_redirects=True,  # Follow redirects to get final status
+            ) as r
+        ):
             logger.info(f"Stream check for {real_url}: {r.status_code}")
+            if r.status_code == 401:
+                # Log additional details for 401 to help diagnose auth issues
+                resp_headers = dict(r.headers)
+                logger.warning(
+                    f"401 Unauthorized for stream. "
+                    f"MAC used: {mac_normalized}, Referer: {headers.get('Referer')}, "
+                    f"Response headers: {resp_headers}"
+                )
+                # Try to read response body for error details (without consuming the stream)
+                try:
+                    # Read a small portion of the body
+                    body_start = r.raw.read(1024)
+                    if body_start:
+                        logger.warning(
+                            f"401 response body (first 1KB): {body_start[:200]}"
+                        )
+                except Exception:
+                    pass
             return {
                 "status": "success" if r.status_code < 400 else "error",
                 "code": r.status_code,
@@ -592,15 +629,25 @@ def proxy_stream(request: Request, target: str, mac: str, origin: Optional[str] 
                 headers={"Retry-After": "300"},  # Suggest retry after 5 minutes
             )
 
+        # Normalize MAC address - try both with and without colons
+        mac_clean = mac.upper().replace(":", "")
+        mac_with_colons = mac.upper()
+        if ":" not in mac_clean and len(mac_clean) == 12:
+            mac_with_colons = ":".join([mac_clean[i : i + 2] for i in range(0, 12, 2)])
+
         # Try to derive host and referer from the target URL
         headers = {
             "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
             "X-User-Agent": "model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c",
-            "Cookie": f"mac={mac.upper()}",
             "Accept": "*/*",
             "Accept-Charset": "UTF-8,*;q=0.8",
             "Connection": "keep-alive",
         }
+
+        # Set MAC cookie in both common formats for compatibility
+        headers["Cookie"] = f"mac={mac_with_colons}"
+        if mac_clean != mac_with_colons.replace(":", ""):
+            headers["Cookie2"] = f"mac={mac_clean}"
 
         if referer:
             headers["Referer"] = referer
@@ -744,6 +791,21 @@ def proxy_stream(request: Request, target: str, mac: str, origin: Optional[str] 
                         _stream_monitor.record_stream_failure(
                             real_url, is_error=True, use_domain=True
                         )
+                        if r.status_code == 401:
+                            # Log detailed auth failure info
+                            resp_headers = dict(r.headers)
+                            logger.warning(
+                                f"401 Unauthorized during proxy_stream for {real_url}. "
+                                f"Headers sent: {headers}, Response headers: {resp_headers}"
+                            )
+                            try:
+                                body_start = r.raw.read(1024)
+                                if body_start:
+                                    logger.warning(
+                                        f"401 body (first 1KB): {body_start[:200]}"
+                                    )
+                            except Exception:
+                                pass
                         yield f"Proxy Error: Portal returned {r.status_code}".encode()
                         r.close()
                         return

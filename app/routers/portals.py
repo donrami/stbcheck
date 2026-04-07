@@ -47,6 +47,12 @@ def build_logo_url(channel_logo: str, portal_url: str) -> Optional[str]:
     # Remove potential Stalker prefix like "s:0:"
     logo = re.sub(r"^s:\d+:", "", channel_logo)
 
+    # Skip data URIs - these are embedded images, not fetchable URLs
+    # The frontend can handle data URIs directly without proxy
+    if logo.startswith("data:"):
+        logger.debug(f"Logo is a data URI, skipping proxy: {logo[:50]}...")
+        return None
+
     # Make absolute URL
     if logo.startswith("/"):
         logo = portal_url.rstrip("/") + logo
