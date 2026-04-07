@@ -9,3 +9,4 @@ aiohttp
 pytz
 python-dateutil
 pytest-asyncio
+cachetools
