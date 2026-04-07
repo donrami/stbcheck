@@ -2,6 +2,7 @@
 Shared constants and base utilities for Stalker services.
 """
 
+import json
 import re
 from typing import Optional, List, Any, Dict
 
@@ -28,37 +29,107 @@ PORTAL_HEADERS = {
 
 def clean_json_response(text: str) -> str:
     """
-    Clean JSON response from portal wrappers.
+    Clean JSON response, removing common wrappers and extracting the first valid JSON object.
 
     Args:
         text: Raw response text
 
     Returns:
-        Cleaned JSON string
+        Cleaned JSON string, or empty string if no valid JSON found
     """
     if not text:
         return ""
-    # Remove any leading/trailing whitespace, BOM, and non-printable characters
+
+    # Remove BOM and null bytes
+    text = text.lstrip("\ufeff").replace("\x00", "")
     text = text.strip()
-    # Remove BOM if present
-    if text.startswith("\ufeff"):
-        text = text[1:]
-    # Remove null bytes
-    text = text.replace("\x00", "")
-    # Try to extract JSON from common JS wrappers
+
+    # If it looks like valid JSON already, try parsing directly
+    if text.startswith("{") or text.startswith("["):
+        try:
+            json.loads(text)
+            return text
+        except json.JSONDecodeError:
+            pass  # Fall through to extraction
+
+    # Remove common JS wrappers
     if text.startswith("/*-secure-") and text.endswith("*/"):
-        text = text[10:-2]
-    # Look for on_success callback pattern
+        text = text[10:-2].strip()
+
+    # Extract from on_success callback
     js_match = re.search(r"on_success\([^,]+,\s*(\{.*\}|\[.*\])\s*\)", text, re.DOTALL)
     if js_match:
-        text = js_match.group(1)
-    # Also try to extract JSON from anywhere in the text if we still don't have a brace
-    if not text.startswith("{") and not text.startswith("["):
-        # Find first JSON object or array
-        brace_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
-        if brace_match:
-            text = brace_match.group(1)
-    return text.strip()
+        candidate = js_match.group(1)
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    # Find the first balanced brace block (object or array)
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == "{" or ch == "[":
+            start = i
+            break
+
+    if start == -1:
+        return ""
+
+    # Use a simple stack-based parser to find the matching closing brace/bracket
+    stack = []
+    in_string = False
+    escape = False
+    opening = text[start]
+    closing = "}" if opening == "{" else "]"
+
+    for i in range(start, len(text)):
+        ch = text[i]
+
+        if escape:
+            escape = False
+            continue
+
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+
+        if ch == '"' and not escape:
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if ch == opening:
+            stack.append(ch)
+        elif ch == closing:
+            if stack and stack[-1] == opening:
+                stack.pop()
+                if not stack:
+                    # Found complete JSON
+                    candidate = text[start : i + 1]
+                    try:
+                        json.loads(candidate)
+                        return candidate
+                    except json.JSONDecodeError:
+                        # Continue searching after this position
+                        start = i + 1
+                        # reset and look for next opening
+                        for j in range(start, len(text)):
+                            if text[j] == "{" or text[j] == "[":
+                                start = j
+                                opening = text[j]
+                                closing = "}" if opening == "{" else "]"
+                                stack = []
+                                break
+                        continue
+        elif ch == "[" or ch == "(":
+            # Ignore other bracket types inside; they are part of data
+            pass
+
+    # No valid JSON found
+    return ""
 
 
 def normalize_mac(mac: str) -> str:

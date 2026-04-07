@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         alias="REQUEST_TIMEOUT",
     )
     stream_timeout: int = Field(
-        default=30,
+        default=60,
         description="Timeout for streaming operations (proxy, concurrent checks)",
         alias="STREAM_TIMEOUT",
     )

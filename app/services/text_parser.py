@@ -73,12 +73,17 @@ def extract_portal_mac_pairs(text: str) -> List[Tuple[str, str]]:
     return list(dict.fromkeys(pairs))
 
 
-def clean_stalker_url(raw_url: str) -> Optional[str]:
+def clean_stalker_url(raw_url: str, portal_url: Optional[str] = None) -> Optional[str]:
     """
     Clean a Stalker URL by removing prefixes like 'ffmpeg', 'ffrt', 'solution'.
 
+    If portal_url is provided and the URL contains 'localhost', it will be
+    replaced with the portal's hostname to handle older Stalker portals that
+    return local network commands like 'ffmpeg http://localhost/ch/123'.
+
     Args:
         raw_url: Raw URL string that may contain prefixes
+        portal_url: Optional portal base URL for localhost replacement
 
     Returns:
         Cleaned URL string or None if input is invalid
@@ -87,4 +92,19 @@ def clean_stalker_url(raw_url: str) -> Optional[str]:
         return None
     u = str(raw_url).strip(" '\"")
     u = re.sub(r"^(ffmpeg|ffrt|solution)\s+", "", u)
+
+    # Replace localhost with portal hostname if provided and URL contains localhost
+    if portal_url and "localhost" in u.lower():
+        from urllib.parse import urlparse
+
+        try:
+            parsed_portal = urlparse(portal_url)
+            portal_hostname = parsed_portal.netloc or parsed_portal.path.split("/")[0]
+            if portal_hostname:
+                u = re.sub(
+                    r"localhost(?=[:/]|$)", portal_hostname, u, flags=re.IGNORECASE
+                )
+        except Exception:
+            pass  # Keep original URL if parsing fails
+
     return u

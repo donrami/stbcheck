@@ -16,6 +16,7 @@ import hashlib
 from datetime import datetime
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import aiohttp
 from yarl import URL
@@ -287,9 +288,22 @@ class StalkerClient:
                         f"Handshake response from {path}: status={resp.status}"
                     )
                     if resp.status == 200:
+                        data = None
+                        # Try json() first, but ContentTypeError can occur when server returns
+                        # valid JSON with wrong Content-Type header
                         try:
                             data = await resp.json()
-                        except (aiohttp.ContentTypeError, json.JSONDecodeError):
+                        except aiohttp.ContentTypeError:
+                            # Content-Type mismatch but body might still be valid JSON
+                            raw_text = await resp.text()
+                            cleaned = clean_json_response(raw_text)
+                            try:
+                                data = json.loads(cleaned)
+                            except (json.JSONDecodeError, ValueError):
+                                logger.warning(
+                                    f"Handshake JSON parse failed from {path} after ContentTypeError fallback. Raw response (first 1000 chars): {raw_text[:1000]}"
+                                )
+                        except json.JSONDecodeError:
                             raw_text = await resp.text()
                             logger.warning(
                                 f"Handshake JSON parse failed from {path}. Raw response (first 1000 chars): {raw_text[:1000]}"
@@ -718,10 +732,13 @@ class StalkerClient:
         Returns:
             Dictionary with link info or None
         """
+        # URL-encode the cmd parameter to handle spaces and special characters
+        # Stalker WAF requires properly encoded cmd values (e.g., "ffrt http://..." becomes "ffrt%20http%3A%2F%2F...")
+        encoded_cmd = quote(cmd, safe="")
         params = {
             "type": "itv",
             "action": "create_link",
-            "cmd": cmd,
+            "cmd": encoded_cmd,
             "series": series,
             "forced_storage": forced_storage,
             "disable_ad": disable_ad,
