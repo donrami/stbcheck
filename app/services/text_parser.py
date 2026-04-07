@@ -3,7 +3,7 @@ Text parsing utilities for extracting portal/MAC pairs and cleaning URLs.
 """
 
 import re
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 
 def extract_portal_mac_pairs(text: str) -> List[Tuple[str, str]]:
