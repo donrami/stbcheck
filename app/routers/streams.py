@@ -182,17 +182,19 @@ def _prune_stream_auth_cache():
         logger.debug(f"Pruned {len(expired_keys)} expired auth cache entries")
 
 
-def _get_stream_auth_cookies(portal_url: str, mac: str) -> dict:
+def _get_stream_auth_data(portal_url: str, mac: str) -> dict:
     """
-    Retrieve cached session cookies for a given portal URL and MAC.
-    Cookies are used to maintain authentication across multiple requests to Stalker portals.
+    Retrieve cached session authentication data (cookies and token) for a given portal URL and MAC.
 
     Args:
         portal_url: The portal base URL (will be normalized)
         mac: MAC address (will be normalized)
 
     Returns:
-        Dictionary of cookie name-value pairs, or empty dict if not found/expired.
+        Dictionary with keys:
+          - "cookies": dict of cookie name-value pairs
+          - "token": optional auth token string
+        Returns empty dict if no cached entry found/expired.
     """
     if not portal_url:
         return {}
@@ -208,7 +210,7 @@ def _get_stream_auth_cookies(portal_url: str, mac: str) -> dict:
     if entry:
         if time.time() - entry.get("timestamp", 0) < _stream_auth_cache_ttl:
             logger.debug(f"Auth cache HIT for {cache_key}")
-            return entry.get("cookies", {})
+            return entry
         else:
             del _stream_auth_cache[cache_key]
             logger.debug(f"Auth cache entry expired for {cache_key}")
@@ -533,6 +535,7 @@ async def get_link(request: Request, req: StreamRequest):
                     )
 
                 # Extract and cache session cookies for this portal+MAC
+                # Exclude 'token' to avoid cross-domain auth issues; only keep mac and other base cookies
                 cookie_dict = {}
                 try:
                     if client._session:
@@ -540,7 +543,8 @@ async def get_link(request: Request, req: StreamRequest):
                             client.base_url
                         )
                         for name, morsel in cookies_for_domain.items():
-                            cookie_dict[name] = morsel.value
+                            if name.lower() != "token":  # Exclude token cookie
+                                cookie_dict[name] = morsel.value
                 except Exception as e:
                     logger.warning(f"Failed to extract cookies from StalkerClient: {e}")
 
@@ -621,15 +625,13 @@ def check_stream(
             "Connection": "keep-alive",
         }
 
-        # Retrieve cached session cookies using portal URL (referer) and MAC
-        session_cookies = {}
-        if referer:
-            session_cookies = _get_stream_auth_cookies(referer, mac)
+        # Retrieve cached session auth data using portal URL (referer) and MAC
+        auth_data = _get_stream_auth_data(referer, mac) if referer else {}
+        session_cookies = auth_data.get("cookies", {})
 
-        # Build Cookie header
+        # Build Cookie header from session cookies if available
         if session_cookies:
             cookie_parts = [f"{k}={v}" for k, v in session_cookies.items()]
-            cookie_parts.append(f"mac={mac_normalized}")
             headers["Cookie"] = "; ".join(cookie_parts)
         else:
             headers["Cookie"] = f"mac={mac_normalized}"
@@ -745,15 +747,13 @@ def proxy_stream(
             "Connection": "keep-alive",
         }
 
-        # Retrieve cached session cookies using portal URL (referer) and MAC
-        session_cookies = {}
-        if referer:
-            session_cookies = _get_stream_auth_cookies(referer, mac)
+        # Retrieve cached session auth data using portal URL (referer) and MAC
+        auth_data = _get_stream_auth_data(referer, mac) if referer else {}
+        session_cookies = auth_data.get("cookies", {})
 
-        # Build Cookie header
+        # Build Cookie header from session cookies if available
         if session_cookies:
             cookie_parts = [f"{k}={v}" for k, v in session_cookies.items()]
-            cookie_parts.append(f"mac={mac_with_colons}")
             headers["Cookie"] = "; ".join(cookie_parts)
         else:
             headers["Cookie"] = f"mac={mac_with_colons}"

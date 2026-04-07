@@ -33,13 +33,16 @@ def detect_expiry(data, depth=0):
 
     # Priority keys for expiry dates - ordered by priority
     primary_keys = [
-        # Stalker/Ministra specific (high priority)
-        "expire_billing_date",
-        "tariff_expired_date",
-        # Standard fields
+        # Wrapper-specific fields (high priority)
         "expire_date",
         "exp_date",
         "expDate",
+        # Admin-injected via phone (YYYY-MM-DD)
+        "phone",
+        # Native Stalker/Ministra fields
+        "expire_billing_date",
+        "tariff_expired_date",
+        # Other common fields
         "max_view_date",
         "end_date",
         "end_date_time",
@@ -53,7 +56,6 @@ def detect_expiry(data, depth=0):
         "expires",
         "expiry_date",
         "expired",
-        "phone",
     ]
 
     # Values that mean "no expiry" — return them as-is
@@ -168,11 +170,16 @@ def detect_expiry_with_source(
         )
 
     primary_keys = [
-        "expire_billing_date",
-        "tariff_expired_date",
+        # Wrapper-specific fields (checked first)
         "expire_date",
         "exp_date",
         "expDate",
+        # Admin-injected via phone (YYYY-MM-DD)
+        "phone",
+        # Native Stalker/Ministra fields
+        "expire_billing_date",
+        "tariff_expired_date",
+        # Other common fields
         "max_view_date",
         "end_date",
         "end_date_time",
@@ -186,7 +193,6 @@ def detect_expiry_with_source(
         "expires",
         "expiry_date",
         "expired",
-        "phone",
     ]
 
     unlimited_values = [

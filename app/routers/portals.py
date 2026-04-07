@@ -252,6 +252,12 @@ async def process_single_portal(url: str, mac: str) -> Optional[Dict]:
     async with StalkerClient(url, mac) as client:
         try:
             logger.info(f"Analyzing portal: {url} ({mac})")
+            # Perform handshake first to establish authentication
+            handshake_success = await client.handshake()
+            if not handshake_success:
+                logger.warning(f"Handshake failed for {url} with MAC {mac}")
+                return None
+            # Now _active_path is set, we can proceed
             exp_info = await client.get_expiration_info()
             if client._active_path is None:
                 return None

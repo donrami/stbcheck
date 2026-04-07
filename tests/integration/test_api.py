@@ -154,6 +154,25 @@ class TestGetLinkEndpoint:
             mock_client.create_link = AsyncMock(
                 return_value={"cmd": "ffmpeg http://stream.example.com/video.ts"}
             )
+            # Mock _session for verify_stream
+            mock_session = MagicMock()
+            mock_session.cookie_jar = MagicMock()
+            mock_client._session = mock_session
+
+            # Create a proper async context manager mock for the response
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.headers = {"Content-Type": "video/mp2t"}
+
+            async def json_func():
+                return {}
+
+            mock_response.json = json_func
+            # Set __aenter__ and __aexit__ as AsyncMock
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session.get.return_value = mock_response
 
             response = client.post(
                 "/api/get_link",

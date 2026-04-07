@@ -7,6 +7,8 @@ This module provides a synchronous interface for Stalker portal operations.
 import logging
 import re
 import json
+import random
+import hashlib
 import requests
 from typing import Optional, Dict, Any
 
@@ -18,7 +20,9 @@ from app.services.base import (
     extract_token,
     unwrap_response,
     PORTAL_HEADERS,
+    MAG200_USER_AGENT,
     MAG250_XUA,
+    normalize_mac,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,18 +40,35 @@ class StalkerPortal:
     """
 
     def __init__(self, portal_url: str, mac_address: str):
+        from app.config import settings
+
         self.base_url = portal_url.rstrip("/")
-        self.mac = mac_address.upper()
+        self.mac = normalize_mac(mac_address)
+        self.stb_lang = "en"
+        self.timezone = getattr(settings, "default_timezone", "Europe/London")
         self.session = requests.Session()
         self.session.headers.update(PORTAL_HEADERS)
         self.token = None
         self.active_path = None
 
+        # Initialize base cookies in session
+        self.session.cookies.update(
+            {
+                "mac": self.mac,
+                "stb_lang": self.stb_lang,
+                "timezone": self.timezone,
+            }
+        )
+
         # Standard MAG250 Headers
         self.headers = {
-            "X-User-Agent": "model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c",
-            "Cookie": f"mac={self.mac}",
+            "User-Agent": MAG200_USER_AGENT,
             "Accept": "*/*",
+            "Accept-Charset": "UTF-8,*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "X-User-Agent": MAG250_XUA,
+            "Referer": f"{self.base_url}/",
+            "Connection": "keep-alive",
         }
 
     def _request(self, params, path=None):
@@ -55,17 +76,55 @@ class StalkerPortal:
         if not target_path:
             return None
 
+        def prepare_headers():
+            hdrs = self.headers.copy()
+            if self.token:
+                hdrs["Authorization"] = f"Bearer {self.token}"
+            return hdrs
+
         try:
             full_params = {"JsHttpRequest": "1-xml", **params}
-            if self.token:
-                self.headers["Authorization"] = f"Bearer {self.token}"
-
             response = self.session.get(
                 target_path,
                 params=full_params,
-                headers=self.headers,
+                headers=prepare_headers(),
                 timeout=settings.request_timeout,
             )
+            if response.status_code in (401, 403):
+                logger.debug(
+                    f"Auth error {response.status_code} on {target_path}, refreshing token"
+                )
+                # Clear token state and cookie
+                self.token = None
+                self.active_path = None
+                try:
+                    self.session.cookies.update({"token": ""})
+                except Exception:
+                    pass
+                # Fresh handshake
+                if not self.handshake():
+                    return None
+                # Retry with new token
+                response = self.session.get(
+                    target_path,
+                    params=full_params,
+                    headers=prepare_headers(),
+                    timeout=settings.request_timeout,
+                )
+                if response.status_code == 404:
+                    return 404
+                response.raise_for_status()
+                try:
+                    data = response.json()
+                except json.JSONDecodeError:
+                    cleaned = clean_json_response(response.text)
+                    try:
+                        data = json.loads(cleaned)
+                    except (json.JSONDecodeError, ValueError):
+                        return None
+                data = unwrap_response(data)
+                return data
+
             if response.status_code == 404:
                 return 404
 
@@ -93,6 +152,7 @@ class StalkerPortal:
         Perform handshake with the portal to get auth token.
 
         Tries multiple common endpoints to find a working handshake URL.
+        If an endpoint returns 404, generates random token + SHA1 prehash and retries.
 
         Returns:
             True if handshake successful and token obtained, False otherwise
@@ -100,17 +160,85 @@ class StalkerPortal:
         paths_to_try = get_handshake_paths(self.base_url)
 
         for path in paths_to_try:
-            res = self._request({"type": "stb", "action": "handshake"}, path=path)
-            if res is None:
+            # First attempt: standard handshake
+            try:
+                response = self.session.get(
+                    path,
+                    params={
+                        "type": "stb",
+                        "action": "handshake",
+                        "JsHttpRequest": "1-xml",
+                    },
+                    headers=self.headers,
+                    timeout=settings.request_timeout,
+                )
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                    except json.JSONDecodeError:
+                        cleaned = clean_json_response(response.text)
+                        try:
+                            data = json.loads(cleaned)
+                        except (json.JSONDecodeError, ValueError):
+                            data = None
+                    if data:
+                        data = unwrap_response(data)
+                        token = extract_token(data)
+                        if token:
+                            self.token = token
+                            self.active_path = path
+                            # Set token cookie for legacy support
+                            try:
+                                self.session.cookies.update({"token": token})
+                            except Exception:
+                                pass
+                            logger.debug(
+                                f"Handshake successful with {path}, token obtained"
+                            )
+                            return True
+                elif response.status_code == 404:
+                    # Generate token+prehash and retry
+                    token_gen = "".join(
+                        random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=32)
+                    )
+                    prehash = hashlib.sha1(token_gen.encode()).hexdigest()
+                    response2 = self.session.get(
+                        path,
+                        params={
+                            "type": "stb",
+                            "action": "handshake",
+                            "token": token_gen,
+                            "prehash": prehash,
+                            "JsHttpRequest": "1-xml",
+                        },
+                        headers=self.headers,
+                        timeout=settings.request_timeout,
+                    )
+                    if response2.status_code == 200:
+                        try:
+                            data = response2.json()
+                        except json.JSONDecodeError:
+                            cleaned = clean_json_response(response2.text)
+                            try:
+                                data = json.loads(cleaned)
+                            except (json.JSONDecodeError, ValueError):
+                                data = None
+                        if data:
+                            data = unwrap_response(data)
+                            token = extract_token(data)
+                            if token:
+                                self.token = token
+                                self.active_path = path
+                                try:
+                                    self.session.cookies.update({"token": token})
+                                except Exception:
+                                    pass
+                                logger.debug(
+                                    f"Handshake successful with {path} (404 fallback), token obtained"
+                                )
+                                return True
+            except requests.RequestException:
                 continue
-
-            token = extract_token(res)
-
-            if token:
-                self.token = token
-                self.active_path = path
-                logger.debug(f"Handshake successful with {path}, token obtained")
-                return True
 
         return False
 
@@ -167,17 +295,8 @@ class StalkerPortal:
         Returns:
             ExpirationInfo object with account status and expiration date
         """
-        # Note: Full synchronous implementation would require duplicating
-        # the async logic. For now, attempt a simple handshake-based check.
         try:
-            if not self.token and not self.handshake():
-                return ExpirationInfo(
-                    status="Invalid",
-                    expiration=None,
-                    error="Handshake failed - cannot authenticate",
-                )
-
-            # Try to get profile for status
+            # _request auto-handles token refresh; just call get_profile
             profile = self.get_profile()
             if profile and isinstance(profile, dict):
                 status_val = profile.get("status")
