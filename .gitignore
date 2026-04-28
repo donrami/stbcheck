@@ -13,6 +13,7 @@ venv/
 .impeccable.md
 skills-lock.json
 .claude
+.pi/
 
 # Dev-only documentation
 docs/
@@ -30,3 +31,8 @@ verified_servers.json
 
 # Repowise
 .repowise
+portal_dump
+progress.md
+test_edge.py
+test_proximity.py
+tests

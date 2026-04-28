@@ -3,6 +3,23 @@ Expiry date detection utilities.
 """
 
 import re
+from typing import Set
+
+# Month names used to detect human-readable dates in the 'phone' field
+# (portal admins inject expiry dates as "April 20, 2027, 4:19 pm")
+_MONTH_NAMES: Set[str] = {
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+}
+
+
+def _looks_like_date(val: str) -> bool:
+    """Check if a string value looks like a date rather than a phone number."""
+    if re.match(r"\d{4}-\d{2}-\d{2}", val):
+        return True
+    if any(month in val.lower() for month in _MONTH_NAMES):
+        return True
+    return False
 from typing import Optional, Tuple
 from dataclasses import dataclass
 
@@ -95,7 +112,7 @@ def detect_expiry(data, depth=0):
             if val_str.lower() in unlimited_values:
                 return str(val)
             if val_str.lower() not in junk_values:
-                if key == "phone" and not re.match(r"\d{4}-\d{2}-\d{2}", val_str):
+                if key == "phone" and not _looks_like_date(val_str):
                     continue
                 return val_str
 
@@ -235,7 +252,7 @@ def detect_expiry_with_source(
                 )
                 return str(val), source
             if val_str.lower() not in junk_values:
-                if key == "phone" and not re.match(r"\d{4}-\d{2}-\d{2}", val_str):
+                if key == "phone" and not _looks_like_date(val_str):
                     continue
                 if val_str.isdigit() and len(val_str) >= 10:
                     try:

@@ -32,10 +32,10 @@ class TestSettings:
             assert settings.log_file_max_bytes == 5 * 1024 * 1024  # 5 MB
             assert settings.log_backup_count == 2
             assert (
-                settings.cors_origins == "http://localhost:8000,http://127.0.0.1:8000"
+                settings.cors_origins == "http://localhost:6767,http://127.0.0.1:6767"
             )
             assert settings.server_host == "0.0.0.0"
-            assert settings.server_port == 8000
+            assert settings.server_port == 6767
             assert settings.app_version == "1.0.1 - Playback Fixes"
             assert settings.max_redirects == 10
 

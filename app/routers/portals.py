@@ -3,6 +3,7 @@ Router for portal-related endpoints.
 """
 
 import base64
+import html
 import json
 import re
 import gc
@@ -337,8 +338,16 @@ async def check_portals(request: Request, req: CheckRequest):
                             verify=settings.verify_ssl,
                         )
                         if response.status_code == 200:
-                            # Strip HTML tags for better regex matching
-                            clean_text = re.sub("<[^<]+?>", " ", response.text)
+                            # Remove script/style content to avoid false matches from JS/JSON-LD
+                            clean_text = re.sub(
+                                r"<(?:script|style)[^>]*>.*?</(?:script|style)>",
+                                " ",
+                                response.text,
+                                flags=re.DOTALL | re.IGNORECASE,
+                            )
+                            # Strip remaining HTML tags and decode HTML entities
+                            clean_text = re.sub("<[^<]+?>", " ", clean_text)
+                            clean_text = html.unescape(clean_text)
                             found_pairs = extract_portal_mac_pairs(clean_text)
                             if found_pairs:
                                 pairs.extend(found_pairs)
