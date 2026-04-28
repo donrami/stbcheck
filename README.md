@@ -117,7 +117,7 @@ All settings are environment variables, grouped by category below.
 | `SERVER_HOST` | `0.0.0.0` | Host to bind the server |
 | `SERVER_PORT` | `6767` | Port to bind the server |
 | `CORS_ORIGINS` | `http://localhost:6767,http://127.0.0.1:6767` | Allowed CORS origins (comma-separated) |
-| `APP_VERSION` | `1.0.1 - Playback Fixes` | Application version string |
+| `APP_VERSION` | `1.1.0` | Application version string |
 
 ### Concurrency & Logging
 
