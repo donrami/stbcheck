@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     # CORS Configuration
     # =============================================================================
     cors_origins: str = Field(
-        default="http://localhost:8000,http://127.0.0.1:8000",
+        default="http://localhost:6767,http://127.0.0.1:6767",
         description="Comma-separated list of allowed CORS origins. Default is development only. Use '*' with caution.",
         alias="CORS_ORIGINS",
     )
@@ -108,7 +108,7 @@ class Settings(BaseSettings):
         alias="SERVER_HOST",
     )
     server_port: int = Field(
-        default=8000,
+        default=6767,
         description="Port number for the server",
         alias="SERVER_PORT",
     )

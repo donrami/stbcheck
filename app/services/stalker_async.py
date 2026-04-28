@@ -524,6 +524,19 @@ class StalkerClient:
             billing_info = billing_full.get("result", {}) if billing_full else {}
             js_billing = billing_full.get("js", {}) if billing_full else {}
 
+            # Account info endpoint — portal admins inject expiry dates into
+            # the 'phone' field as human-readable strings (e.g. "April 20, 2027").
+            # This is the most reliable source for expiry on most portals.
+            acc_info_main_full = await self._request_full(
+                {"type": "account_info", "action": "get_main_info"}
+            )
+            acc_info_main = (
+                acc_info_main_full.get("result", {}) if acc_info_main_full else {}
+            )
+            js_acc_info_main = (
+                acc_info_main_full.get("js", {}) if acc_info_main_full else {}
+            )
+
             # Detect Stalker portal
             is_stalker = False
             stalker_fields = None
@@ -539,8 +552,11 @@ class StalkerClient:
                     logger.debug(f"Stalker portal detected. Fields: {stalker_fields}")
 
             # Collect all data sources - check js objects first (where expiry often lives)
-            # then result objects
+            # then result objects. account_info_main (phone field) is checked early
+            # since portal admins commonly inject expiry dates there.
             data_sources = []
+            if isinstance(js_acc_info_main, dict):
+                data_sources.append((js_acc_info_main, "account_info_main_js"))
             if isinstance(js_billing, dict):
                 data_sources.append((js_billing, "billing_js"))
             if isinstance(js_do_auth, dict):
@@ -551,6 +567,8 @@ class StalkerClient:
                 data_sources.append((js_account, "account_js"))
             if isinstance(js_main, dict):
                 data_sources.append((js_main, "main_js"))
+            if isinstance(acc_info_main, dict):
+                data_sources.append((acc_info_main, "account_info_main"))
             if isinstance(billing_info, dict):
                 data_sources.append((billing_info, "billing"))
             if isinstance(do_auth_result, dict):

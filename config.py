@@ -99,7 +99,7 @@ class Settings(BaseSettings):
         alias="SERVER_HOST",
     )
     server_port: int = Field(
-        default=8000,
+        default=6767,
         description="Port number for the server",
         alias="SERVER_PORT",
     )

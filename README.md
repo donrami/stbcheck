@@ -49,7 +49,7 @@ A Stalker Portal checker and player. STBcheck allows you to bulk-check Stalker p
    python app.py
    ```
 
-5. Open your browser and navigate to `http://localhost:8000`.
+5. Open your browser and navigate to `http://localhost:6767`.
 
 ## Configuration
 
@@ -71,9 +71,9 @@ cp .env.example .env
 | **Logging** | `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
 | | `LOG_FILE_MAX_BYTES` | `5242880` (5 MB) | Maximum log file size before rotation (bytes) |
 | | `LOG_BACKUP_COUNT` | `2` | Number of backup log files to keep |
-| **CORS** | `CORS_ORIGINS` | `http://localhost:8000,http://127.0.0.1:8000` | Allowed CORS origins (comma-separated) |
+| **CORS** | `CORS_ORIGINS` | `http://localhost:6767,http://127.0.0.1:6767` | Allowed CORS origins (comma-separated) |
 | **Server** | `SERVER_HOST` | `0.0.0.0` | Host to bind the server |
-| | `SERVER_PORT` | `8000` | Port to bind the server |
+| | `SERVER_PORT` | `6767` | Port to bind the server |
 | **Security** | `VERIFY_SSL` | `true` | Verify SSL certificates for outbound requests |
 | **Application** | `APP_VERSION` | `1.0.1 - Playback Fixes` | Application version string |
 | **Date Parsing** | `DATE_PARSING_TIMEZONE` | `UTC` | Timezone for parsing expiry dates |

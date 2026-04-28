@@ -494,7 +494,7 @@ class TestCORSHeaders:
         response = client.options(
             "/api/check",
             headers={
-                "Origin": "http://localhost:8000",
+                "Origin": "http://localhost:6767",
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": "Content-Type",
             },
