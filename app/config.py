@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     # Application Settings
     # =============================================================================
     app_version: str = Field(
-        default="1.0.1 - Playback Fixes",
+        default="1.1.0",
         description="Application version string",
         alias="APP_VERSION",
     )
