@@ -207,10 +207,10 @@ class TestGetLinkEndpoint:
             )
 
             assert response.status_code == 400
-            assert "Could not create link" in response.json()["detail"]
+            assert "Portal handshake failed" in response.json()["detail"]
 
     def test_get_link_no_stream_url(self, client):
-        """Test link generation when no stream URL is returned."""
+        """Test link generation when create_link returns no stream URL (non-direct cmd path)."""
         with patch("app.routers.streams.StalkerClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
@@ -218,18 +218,23 @@ class TestGetLinkEndpoint:
             mock_client.__aexit__.return_value = None
             mock_client.handshake = AsyncMock(return_value=True)
             mock_client.create_link = AsyncMock(return_value={})  # No cmd field
+            # Mock _session for cookie extraction
+            mock_cookie_jar = MagicMock()
+            mock_cookie_jar.filter_cookies.return_value = {}
+            mock_session = MagicMock()
+            mock_session.cookie_jar = mock_cookie_jar
+            mock_client._session = mock_session
 
             response = client.post(
                 "/api/get_link",
                 json={
                     "url": "http://example.com/stalker_portal/c/",
                     "mac": "00:11:22:33:44:55",
-                    "cmd": "ffmpeg http://cmd",
+                    "cmd": "some_channel_cmd",  # Non-direct URL — triggers create_link
                 },
             )
 
             assert response.status_code == 400
-
     def test_get_link_invalid_request(self, client):
         """Test link generation with invalid request data."""
         response = client.post(
@@ -251,18 +256,23 @@ class TestGetLinkEndpoint:
             mock_client.__aexit__.return_value = None
             mock_client.handshake = AsyncMock(return_value=True)
             mock_client.create_link = AsyncMock(return_value={"cmd": ""})  # Empty cmd
+            # Mock _session for cookie extraction
+            mock_cookie_jar = MagicMock()
+            mock_cookie_jar.filter_cookies.return_value = {}
+            mock_session = MagicMock()
+            mock_session.cookie_jar = mock_cookie_jar
+            mock_client._session = mock_session
 
             response = client.post(
                 "/api/get_link",
                 json={
                     "url": "http://example.com/stalker_portal/c/",
                     "mac": "00:11:22:33:44:55",
-                    "cmd": "ffmpeg http://cmd",
+                    "cmd": "some_channel_cmd",  # Non-direct URL — triggers create_link
                 },
             )
 
             assert response.status_code == 400
-
 
 class TestProxyLogoEndpoint:
     """Tests for GET /api/proxy_logo endpoint."""
