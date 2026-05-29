@@ -622,6 +622,16 @@ async def get_link(request: Request, req: StreamRequest):
     async with StalkerClient(req.url, req.mac) as client:
         logger.info(f"get_link called: url={req.url}, mac={req.mac}, cmd={req.cmd}")
 
+        # Always perform handshake first to establish session cookies.
+        # Even when the cmd is a direct URL (ffmpeg/http prefix), the streaming
+        # server requires an active session (token cookie) — without it, servers
+        # return 458 (Stalker WAF: invalid token).
+        handshake_success = await client.handshake()
+        logger.info(f"Handshake result: {handshake_success}")
+        if not handshake_success:
+            logger.warning(f"Handshake failed for {req.url} with MAC {req.mac}")
+            raise HTTPException(status_code=400, detail="Portal handshake failed")
+
         # Determine if cmd is already a full stream URL (optionally prefixed with "ffmpeg ")
         raw_cmd = req.cmd.strip() if req.cmd else ""
         direct_url = None
@@ -633,14 +643,9 @@ async def get_link(request: Request, req: StreamRequest):
                 direct_url = raw_cmd
 
         if direct_url:
-            logger.info(f"Direct stream URL detected, skipping handshake/create_link")
+            logger.info(f"Direct stream URL detected, using after handshake")
             target = direct_url
         else:
-            handshake_success = await client.handshake()
-            logger.info(f"Handshake result: {handshake_success}")
-            if not handshake_success:
-                logger.warning(f"Handshake failed for {req.url} with MAC {req.mac}")
-                raise HTTPException(status_code=400, detail="Portal handshake failed")
             res = await client.create_link(req.cmd)
             logger.info(f"create_link result: {res}")
             target = None
@@ -663,7 +668,9 @@ async def get_link(request: Request, req: StreamRequest):
             )
 
         # Extract and cache session cookies for this portal+MAC
-        # Exclude 'token' to avoid cross-domain auth issues; only keep mac and other base cookies
+        # Including the token cookie is required — the streaming server on the same
+        # domain needs it to authenticate the stream request. Without it, servers
+        # return 458 (Stalker WAF: invalid token).
         cookie_dict = {}
         try:
             if client._session:
@@ -671,8 +678,7 @@ async def get_link(request: Request, req: StreamRequest):
                     client.base_url
                 )
                 for name, morsel in cookies_for_domain.items():
-                    if name.lower() != "token":  # Exclude token cookie
-                        cookie_dict[name] = morsel.value
+                    cookie_dict[name] = morsel.value
         except Exception as e:
             logger.warning(f"Failed to extract cookies from StalkerClient: {e}")
 
@@ -797,17 +803,19 @@ def check_stream(
             allow_redirects=True,
         )
         logger.info(f"Stream check for {real_url}: {r.status_code}")
-        if r.status_code == 401:
+        if r.status_code in (401, 458):
             # Log detailed auth failure info
+            # 458 is the Stalker WAF status for "invalid token"
+            status_label = "401 Unauthorized" if r.status_code == 401 else "458 Invalid Token"
             resp_headers = dict(r.headers)
             logger.warning(
-                f"401 Unauthorized during check_stream for {real_url}. "
+                f"{status_label} during check_stream for {real_url}. "
                 f"Headers sent: {headers}, Response headers: {resp_headers}"
             )
             try:
                 body_start = r.raw.read(1024)
                 if body_start:
-                    logger.warning(f"401 body (first 1KB): {body_start[:200]}")
+                    logger.warning(f"{status_label} body (first 1KB): {body_start[:200]}")
             except Exception:
                 pass
 
@@ -1085,19 +1093,22 @@ def proxy_stream(
                     _stream_monitor.record_stream_failure(
                         real_url, is_error=True, use_domain=True
                     )
-                    if r.status_code == 401:
+                    if r.status_code in (401, 458):
                         # Invalidate the cached session and return error so frontend can retry
+                        # 458 is the Stalker WAF status for "invalid token" — the token cookie
+                        # has expired or was not provided, and the streaming server rejected the request.
                         _invalidate_stream_auth_cache(referer, mac)
+                        status_label = "401 Unauthorized" if r.status_code == 401 else "458 Invalid Token"
                         resp_headers = dict(r.headers)
                         logger.warning(
-                            f"401 Unauthorized during proxy_stream for {real_url}. "
+                            f"{status_label} during proxy_stream for {real_url}. "
                             f"Invalidated auth cache. Headers sent: {headers}, Response headers: {resp_headers}"
                         )
                         try:
                             body_start = r.raw.read(1024)
                             if body_start:
                                 logger.warning(
-                                    f"401 body (first 1KB): {body_start[:200]}"
+                                    f"{status_label} body (first 1KB): {body_start[:200]}"
                                 )
                         except Exception:
                             pass
