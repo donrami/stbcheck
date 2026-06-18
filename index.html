@@ -909,6 +909,49 @@
             backdrop-filter: blur(10px);
             font-weight: var(--font-weight-semibold);
             display: none;
+            align-items: center;
+            gap: var(--space-3);
+        }
+
+        .player-status {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-1) var(--space-3);
+            border-radius: var(--radius-full);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-semibold);
+            border: 1px solid transparent;
+            transition: background-color var(--duration-base) var(--ease-out),
+                        color var(--duration-base) var(--ease-out),
+                        border-color var(--duration-base) var(--ease-out);
+        }
+
+        .player-status[data-state="loading"],
+        .player-status[data-state="validating"],
+        .player-status[data-state="connecting"],
+        .player-status[data-state="buffering"],
+        .player-status[data-state="retrying"] {
+            background: var(--accent-subtle);
+            color: var(--accent-hover);
+            border-color: var(--border-subtle);
+        }
+
+        .player-status[data-state="playing"] {
+            background: var(--color-success-bg);
+            color: var(--color-success);
+            border-color: rgba(34, 197, 94, 0.3);
+        }
+
+        .player-status[data-state="failed"] {
+            background: var(--color-error-bg);
+            color: var(--color-error);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .player-status[data-state="idle"],
+        .player-status:empty {
+            display: none;
         }
 
         /* Grid Area */
@@ -1633,7 +1676,7 @@
                     <i class="fas fa-external-link-alt"></i> Open in external player
                 </button>
             </div>
-            <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span></div>
+            <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span><span id="player-status" class="player-status" data-state="idle" aria-live="polite" role="status"></span></div>
         </div>
 
         <div class="resizer" id="resizer"></div>
@@ -2019,6 +2062,29 @@
             } else {
                 loader.style.display = 'none';
             }
+        }
+
+        // Updates the playback status pill in the now-playing bar.
+        // States: idle (hidden), loading, validating, connecting,
+        // buffering, retrying, playing, failed.
+        function setPlayerStatus(state, message) {
+            const pill = document.getElementById('player-status');
+            if (!pill) return;
+            pill.dataset.state = state;
+            if (state === 'idle' || !message) {
+                pill.textContent = '';
+                return;
+            }
+            let icon = '';
+            if (state === 'loading' || state === 'validating' || state === 'connecting' ||
+                state === 'buffering' || state === 'retrying') {
+                icon = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i> ';
+            } else if (state === 'playing') {
+                icon = '<i class="fas fa-circle-play" aria-hidden="true"></i> ';
+            } else if (state === 'failed') {
+                icon = '<i class="fas fa-exclamation-circle" aria-hidden="true"></i> ';
+            }
+            pill.innerHTML = icon + escapeHTML(message);
         }
 
         function openModal(modalId) {
@@ -2710,7 +2776,8 @@
             const p = currentPortals[activePortal];
             lastPlayedPortal = p;
             lastPlayedChannel = ch;
-            document.getElementById('ch-name-display').innerText = ch.name + " (Loading...)";
+            document.getElementById('ch-name-display').innerText = ch.name;
+            setPlayerStatus('loading', 'Requesting stream link…');
             document.getElementById('now-playing').style.display = 'block';
             document.getElementById('playerErrorOverlay').style.display = 'none';
 
@@ -2725,10 +2792,12 @@
                     const absoluteUrl = window.location.origin + data.url;
                     startPlayer(absoluteUrl, ch.name, data.direct_url || absoluteUrl);
                 } else {
+                    setPlayerStatus('failed', 'No stream link returned');
                     showAlert("Could not get stream link");
                 }
             } catch (e) {
                 console.error("Playback failed:", e);
+                setPlayerStatus('failed', 'Network error');
                 showAlert("Playback error or Portal rejected the link");
             }
         }
@@ -2737,6 +2806,11 @@
             if (monitorTimer !== null) {
                 clearInterval(monitorTimer);
                 monitorTimer = null;
+            }
+            // Reset the player status pill so it doesn't show stale info
+            // when the user switches channels or stops playback.
+            if (typeof setPlayerStatus === 'function') {
+                setPlayerStatus('idle');
             }
             // Bump generation so any in-flight callbacks from the old player
             // recognise they've been superseded and bail without touching
@@ -2810,7 +2884,8 @@
             const video = document.getElementById('video');
             stopPlayers();
 
-            document.getElementById('ch-name-display').innerText = name + " (Initializing...)";
+            document.getElementById('ch-name-display').innerText = name;
+            setPlayerStatus('connecting', 'Connecting…');
             // Stream type detection - check multiple indicators
             let isHls = false;
             let streamType = 'mpegts';  // Default for IPTV
@@ -2861,10 +2936,11 @@
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         video.play().catch(e => console.log("HLS play promise interrupted", e));
                         document.getElementById('ch-name-display').innerText = name;
+                        setPlayerStatus('playing', 'Live');
                     });
                     hls.on(Hls.Events.ERROR, (event, data) => {
                         if (data.fatal) {
-                            document.getElementById('ch-name-display').innerText = name + " (HLS Connection Failed)";
+                            setPlayerStatus('failed', 'HLS connection failed');
                         }
                     });
                 } else {
@@ -3216,9 +3292,10 @@
                          // Try Strategy 1: Enhanced mpegts.js
                          const mpegResult = await tryMpegtsPlayer();
                          
-                         if (mpegResult.success && mpegPlayer) {
-                             document.getElementById('ch-name-display').innerText = name;
-                             playbackSucceeded = true;
+                        if (mpegResult.success && mpegPlayer) {
+                            document.getElementById('ch-name-display').innerText = name;
+                            setPlayerStatus('playing', 'Live');
+                            playbackSucceeded = true;
                              
                              // Set up error monitoring
                              const monitorPlayback = () => {
@@ -3295,12 +3372,13 @@
                              }
                          }
                      }
-                     // Display error only after all retries exhausted
-                     if (!playbackSucceeded) {
-                         document.getElementById('ch-name-display').innerText = name + ' (' + finalErrorTitle + ')';
-                         document.getElementById('playerErrorTitle').innerText = finalErrorTitle;
-                         document.getElementById('playerErrorDesc').innerText = finalErrorDesc;
-                         document.getElementById('playerErrorOverlay').style.display = 'flex';
+                    // Display error only after all retries exhausted
+                    if (!playbackSucceeded) {
+                        document.getElementById('ch-name-display').innerText = name;
+                        setPlayerStatus('failed', finalErrorTitle);
+                        document.getElementById('playerErrorTitle').innerText = finalErrorTitle;
+                        document.getElementById('playerErrorDesc').innerText = finalErrorDesc;
+                        document.getElementById('playerErrorOverlay').style.display = 'flex';
 
                          // Show the "Open in VLC" button.
                          // The WAF on this portal rejects browser-based playback but
