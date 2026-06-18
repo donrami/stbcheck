@@ -1520,6 +1520,45 @@
             margin-bottom: var(--space-4);
             opacity: 0.3;
         }
+
+        /* Discovery progress (SSE-driven determinate progress during portal check) */
+        .discovery-progress {
+            max-width: 400px;
+            margin: var(--space-5) auto 0;
+        }
+
+        .discovery-progress-bar {
+            height: 6px;
+            background: var(--surface-input);
+            border-radius: var(--radius-full);
+            overflow: hidden;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .discovery-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--accent);
+            border-radius: var(--radius-full);
+            box-shadow: 0 0 8px var(--accent-glow);
+            transition: width var(--duration-base) var(--ease-out);
+        }
+
+        .discovery-progress-text {
+            margin-top: var(--space-2);
+            font-size: var(--font-size-sm);
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .empty-state.is-error i {
+            color: var(--color-error);
+            opacity: 1;
+        }
+
+        .empty-state.is-error .empty-state-message {
+            color: var(--text-primary);
+        }
     </style>
 </head>
 
@@ -2145,6 +2184,71 @@
         let displayedCount = CHANNELS_PER_PAGE;
         let filteredChannels = [];
 
+
+        // Renders the channelsGrid empty-state during portal discovery.
+        // Handles four sub-states: status (indeterminate), start/progress
+        // (determinate with bar), and error. For 'progress' events we
+        // update the existing bar in place to avoid flicker.
+        function renderDiscoveryStatus(state) {
+            const grid = document.getElementById('channelsGrid');
+            if (!grid) return;
+
+            const { type } = state;
+
+            if (type === 'progress') {
+                const fill = grid.querySelector('.discovery-progress-fill');
+                const text = grid.querySelector('.discovery-progress-text');
+                if (fill && text) {
+                    const pct = Math.max(0, Math.min(100, Math.round((state.current / state.total) * 100)));
+                    fill.style.width = pct + '%';
+                    text.textContent = `${state.current} of ${state.total} portals checked (${pct}%)`;
+                    return;
+                }
+                // Fall through: DOM was overwritten (e.g. by a 'status' event).
+                // The block below will rebuild the bar at the current count.
+            }
+
+            if (type === 'start' || type === 'progress') {
+                const isStart = type === 'start';
+                const pct = isStart
+                    ? 0
+                    : Math.max(0, Math.min(100, Math.round((state.current / state.total) * 100)));
+                const countText = isStart
+                    ? `0 of ${state.total} portals checked (0%)`
+                    : `${state.current} of ${state.total} portals checked (${pct}%)`;
+                grid.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <div class="empty-state-message">${escapeHTML(state.message || 'Checking portals…')}</div>
+                        <div class="discovery-progress">
+                            <div class="discovery-progress-bar">
+                                <div class="discovery-progress-fill" style="width: ${pct}%"></div>
+                            </div>
+                            <div class="discovery-progress-text">${countText}</div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            if (type === 'error') {
+                grid.innerHTML = `
+                    <div class="empty-state is-error" style="grid-column: 1/-1; margin-top: var(--space-12);">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div class="empty-state-message">${escapeHTML(state.message || 'Something went wrong.')}</div>
+                    </div>
+                `;
+                return;
+            }
+
+            // Default: status (indeterminate spinner + text)
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <div class="empty-state-message">${escapeHTML(state.message || 'Working…')}</div>
+                </div>
+            `;
+        }
         async function checkPortals() {
             // Hardening: Prevent double submission
             if (isRequestInProgress) {
@@ -2217,13 +2321,14 @@
                         try {
                             const data = JSON.parse(line.slice(6));
                             if (data.type === 'status') {
-                                // Update status message
-                                document.getElementById('channelsGrid').innerHTML = `
-                                    <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
-                                        <i class="fas fa-spinner fa-spin"></i>
-                                        ${escapeHTML(data.message)}
-                                    </div>
-                                `;
+                                // Indeterminate status update (e.g. "Crawling example.com...")
+                                renderDiscoveryStatus({ type: 'status', message: data.message });
+                            } else if (data.type === 'start') {
+                                // Discovery started with N portal/MAC pairs to check
+                                renderDiscoveryStatus({ type: 'start', message: data.message, total: data.total });
+                            } else if (data.type === 'progress') {
+                                // One more portal checked — update the determinate bar in place
+                                renderDiscoveryStatus({ type: 'progress', current: data.current, total: data.total });
                             } else if (data.type === 'result') {
                                 // Skip portals with no channels to avoid empty server entries
                                 if (data.result && (data.result.channel_count === 0 || (Array.isArray(data.result.channels) && data.result.channels.length === 0))) {
