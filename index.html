@@ -1283,6 +1283,27 @@
             will-change: transform;
         }
 
+        .loader-cancel {
+            margin-top: var(--space-3);
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-default);
+            padding: var(--space-2) var(--space-5);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-semibold);
+            transition: background-color var(--duration-fast) var(--ease-out),
+                        color var(--duration-fast) var(--ease-out),
+                        border-color var(--duration-fast) var(--ease-out);
+        }
+
+        .loader-cancel:hover {
+            background: var(--surface-interactive);
+            color: var(--text-primary);
+            border-color: var(--border-accent);
+        }
+
         @keyframes spin {
             to {
                 transform: rotate(360deg);
@@ -1669,6 +1690,7 @@
     <div id="loader">
         <div class="spinner"></div>
         <div id="loader-text">Analyzing portals...</div>
+        <button class="loader-cancel" id="loaderCancelBtn" type="button" aria-label="Cancel discovery">Cancel</button>
     </div>
 
     <div class="sidebar">
@@ -2110,9 +2132,28 @@
             if (show) {
                 loaderText.textContent = message;
                 loader.style.display = 'flex';
+                if (typeof ensureLoaderCancelWired === 'function') {
+                    ensureLoaderCancelWired();
+                }
             } else {
                 loader.style.display = 'none';
             }
+        }
+
+        // Wires the loader's Cancel button (once on first call). Calling
+        // reader.cancel() aborts the active SSE stream and lets the
+        // finally block in checkPortals reset state.
+        let loaderCancelWired = false;
+        function ensureLoaderCancelWired() {
+            if (loaderCancelWired) return;
+            const btn = document.getElementById('loaderCancelBtn');
+            if (!btn) return;
+            btn.addEventListener('click', async () => {
+                if (currentDiscoveryReader) {
+                    try { await currentDiscoveryReader.cancel(); } catch (e) { /* ignore */ }
+                }
+            });
+            loaderCancelWired = true;
         }
 
         // Updates the playback status pill in the now-playing bar.
@@ -2318,6 +2359,7 @@
 
         // Hardening: Prevent double submission
         let isRequestInProgress = false;
+        let currentDiscoveryReader = null;
 
         const CHANNELS_PER_PAGE = 50;
         let displayedCount = CHANNELS_PER_PAGE;
@@ -2448,7 +2490,8 @@
                     body: JSON.stringify({ text: text })
                 });
 
-                const reader = response.body.getReader();
+                currentDiscoveryReader = response.body.getReader();
+                const reader = currentDiscoveryReader;
                 const decoder = new TextDecoder();
                 let buffer = '';  // Buffer for incomplete SSE lines
 
@@ -2521,6 +2564,7 @@
                 showAlert('Error connecting to server. Please try again.');
             } finally {
                 isRequestInProgress = false;
+                currentDiscoveryReader = null;
                 showLoader(false);
             }
         }
