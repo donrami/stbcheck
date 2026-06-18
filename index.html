@@ -1709,7 +1709,7 @@
     <main class="main-content" id="main-content" role="main">
         <div class="player-container">
             <video id="video" controls></video>
-            <div class="player-error-overlay" id="playerErrorOverlay" data-error-category="">
+            <div class="player-error-overlay" id="playerErrorOverlay" data-error-category="" role="alert">
                 <button class="close-overlay"
                     onclick="document.getElementById('playerErrorOverlay').style.display='none'"
                     aria-label="Close error message"><span aria-hidden="true">&times;</span></button>
@@ -1727,12 +1727,12 @@
                         <i class="fas fa-external-link-alt"></i> Open in external player
                     </button>
                 </div>
-            <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span><span id="player-status" class="player-status" data-state="idle" aria-live="polite" role="status"></span></div>
+            <div id="now-playing" aria-live="polite">NOW PLAYING: <span id="ch-name-display">None</span><span id="player-status" class="player-status" data-state="idle" role="status"></span></div>
         </div>
 
         <div class="resizer" id="resizer"></div>
 
-        <div class="channels-grid" id="channelsGrid">
+        <div class="channels-grid" id="channelsGrid" aria-live="polite" role="status">
             <div class="empty-state" style="grid-column: 1/-1; text-align: center; color: var(--text-secondary); margin-top: var(--space-12);">
                 <i class="fas fa-tv" style="display: block; font-size: var(--font-size-3xl); margin-bottom: var(--space-4); opacity: 0.3;"></i>
                 Select a portal to view channels
