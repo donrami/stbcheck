@@ -13,6 +13,7 @@ venv/
 .impeccable.md
 skills-lock.json
 .claude
+AGENTS.md
 .pi/
 
 # Dev-only documentation

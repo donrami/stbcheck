@@ -123,7 +123,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -1589,6 +1589,10 @@
                 <div class="error-title" id="playerErrorTitle">Playback Failed</div>
                 <div class="error-desc" id="playerErrorDesc">This stream format (likely HEVC/H.265) is not supported by
                     your browser.</div>
+                <button class="btn-external-fix" id="btnPlayDirect" style="display:none"
+                    aria-label="Open stream in external player">
+                    <i class="fas fa-external-link-alt"></i> Open in external player
+                </button>
             </div>
             <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span></div>
         </div>
@@ -1752,8 +1756,16 @@
         let channelSearchQuery = '';
         let hls = null;
         let mpegPlayer = null;
+        // Monotonically-incremented generation counter. Bumped on every
+        // stopPlayers() call and on every fresh tryMpegtsPlayer()
+        // creation. Used to detect stale async callbacks (worker ERROR
+        // events, the .play() promise resolution) that fire after the
+        // player they belong to has been torn down or superseded by a
+        // newer playback — those callbacks must NOT touch mpegPlayer
+        // or the <video> element, otherwise they cause SourceBuffer
+        let playerGeneration = 0;
+        let monitorTimer = null;
         let verifiedServers = [];
-
         const escapeHTML = (str) => {
             if (!str) return "";
             return String(str).replace(/[&<>"']/g, m => ({
@@ -1855,6 +1867,18 @@
             });
         }
 
+        async function deletePortalChannels(url, mac) {
+            const db = await dbPromise;
+            const portalId = `${url}|${mac}`;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('portalChannels', 'readwrite');
+                const store = tx.objectStore('portalChannels');
+                store.delete(portalId);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
         async function saveState() {
             try {
                 // Large data goes to IndexedDB
@@ -1938,8 +1962,8 @@
                 debouncedChannelSearch(e.target.value);
             });
 
-            // Attach delete function to the confirm button
-            document.getElementById('confirmDeleteBtn').onclick = deleteVerifiedServer;
+            // Wire confirm button to the generic dispatcher
+            document.getElementById('confirmDeleteBtn').onclick = handleConfirmAction;
         });
 
         function showAlert(msg) {
@@ -1993,7 +2017,7 @@
                             <button class="btn-action" onclick="copyVerifiedUrl(${index}, event)" title="Copy URL" aria-label="Copy server URL">
                                 <i class="fas fa-link"></i>
                             </button>
-                            <button class="btn-delete" onclick="confirmDeleteServer(${index})" title="Remove from verified" aria-label="Remove server from verified list">
+                            <button class="btn-action" onclick="confirmDeleteServer(${index})" title="Delete" aria-label="Delete server">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
@@ -2059,24 +2083,42 @@
             doCopy(server.url, btn);
         }
 
-        // Store the index of the server to be deleted
-        let serverToDeleteIndex = null;
+        // Generic confirm-modal dispatcher: stores a callback and the message
+        // the confirm button should run. Reused for verified-server delete
+        // and portal-list remove.
+        let pendingConfirmCallback = null;
 
-        function confirmDeleteServer(index) {
-            serverToDeleteIndex = index;
-            const server = verifiedServers[index];
-            const message = `Are you sure you want to remove this server from your verified list?\n\n${server.url}\n${server.mac}`;
+        function setConfirmAction(message, callback) {
             document.getElementById('confirmMessage').innerText = message;
+            pendingConfirmCallback = callback;
             openModal('confirmModal');
         }
 
-        async function deleteVerifiedServer() {
-            if (serverToDeleteIndex === null) return;
-
+        async function handleConfirmAction() {
+            if (!pendingConfirmCallback) {
+                closeModal('confirmModal');
+                return;
+            }
+            const cb = pendingConfirmCallback;
+            pendingConfirmCallback = null;
             try {
-                verifiedServers.splice(serverToDeleteIndex, 1);
+                await cb();
+            } catch (e) {
+                console.error("Confirm action failed:", e);
+            }
+        }
+
+        function confirmDeleteServer(index) {
+            const server = verifiedServers[index];
+            if (!server) return;
+            const message = `Are you sure you want to remove this server from your verified list?\n\n${server.url}\n${server.mac}`;
+            setConfirmAction(message, () => deleteVerifiedServer(index));
+        }
+
+        async function deleteVerifiedServer(index) {
+            try {
+                verifiedServers.splice(index, 1);
                 await dbSet('verifiedServers', verifiedServers);
-                serverToDeleteIndex = null;
                 closeModal('confirmModal');
                 showVerifiedModal(); // Refresh the list
             } catch (e) {
@@ -2255,6 +2297,9 @@
                         </button>
                         <button class="btn-verify" title="Add to verified" aria-label="Add server to verified list" onclick="event.stopPropagation(); verifyServer(${index})">
                             <i class="fas fa-check"></i>
+                        </button>
+                        <button class="btn-delete" title="Remove from list" aria-label="Remove portal from list" onclick="event.stopPropagation(); confirmRemovePortal(${index})">
+                            <i class="fas fa-trash"></i>
                         </button>
                     </div>
                 `;
@@ -2478,8 +2523,83 @@
             }
         }
 
+        function confirmRemovePortal(index) {
+            const portal = currentPortals[index];
+            if (!portal) return;
+            const macLine = portal.mac ? `\n${portal.mac}` : '';
+            const message = `Remove this portal from your list?\n\n${portal.url}${macLine}`;
+            setConfirmAction(message, () => removePortalFromList(index));
+        }
+
+        async function removePortalFromList(index) {
+            if (index < 0 || index >= currentPortals.length) return;
+            const portal = currentPortals[index];
+            if (!portal) return;
+
+            const portalUrl = portal.url;
+            const portalMac = portal.mac;
+            const wasActive = activePortal === index;
+
+            try {
+                // Remove from currentPortals
+                currentPortals.splice(index, 1);
+
+                // Adjust activePortal so it still points at the same portal (or a sensible fallback)
+                if (activePortal !== null) {
+                    if (wasActive) {
+                        activePortal = currentPortals.length > 0
+                            ? Math.min(index, currentPortals.length - 1)
+                            : null;
+                    } else if (activePortal > index) {
+                        activePortal -= 1;
+                    }
+                }
+
+                // Also remove from verifiedServers if present
+                const vIndex = verifiedServers.findIndex(v => v.url === portalUrl);
+                if (vIndex !== -1) {
+                    verifiedServers.splice(vIndex, 1);
+                    await dbSet('verifiedServers', verifiedServers);
+                }
+
+                // Clean up cached channels for this portal
+                try {
+                    await deletePortalChannels(portalUrl, portalMac);
+                } catch (e) {
+                    console.warn("Failed to clean cached channels:", e);
+                }
+
+                // Persist updated state
+                await saveState();
+
+                // Close confirm modal
+                closeModal('confirmModal');
+
+                // Re-render portal list
+                renderPortalList();
+
+                // Update channels view to reflect the new active portal
+                if (activePortal === null) {
+                    document.getElementById('channelsGrid').innerHTML = '';
+                    document.getElementById('categoriesSidebar').style.display = 'none';
+                } else {
+                    selectPortal(activePortal);
+                }
+
+                showAlert('Portal removed from your list');
+            } catch (e) {
+                console.error("Failed to remove portal from list:", e);
+                showAlert("Error removing portal from list");
+            }
+        }
+
+        let lastPlayedPortal = null;
+        let lastPlayedChannel = null;
+
         async function playChannel(ch) {
             const p = currentPortals[activePortal];
+            lastPlayedPortal = p;
+            lastPlayedChannel = ch;
             document.getElementById('ch-name-display').innerText = ch.name + " (Loading...)";
             document.getElementById('now-playing').style.display = 'block';
             document.getElementById('playerErrorOverlay').style.display = 'none';
@@ -2492,12 +2612,8 @@
                 });
                 const data = await res.json();
                 if (data.url) {
-                    // Make the proxy URL absolute for worker compatibility
-                    // Note: We skip /api/check_stream validation because CDN stream tokens
-                    // expire in 3-5 seconds. Adding a validation round-trip causes the
-                    // stream URL to die before playback starts.
                     const absoluteUrl = window.location.origin + data.url;
-                    startPlayer(absoluteUrl, ch.name);
+                    startPlayer(absoluteUrl, ch.name, data.direct_url || absoluteUrl);
                 } else {
                     showAlert("Could not get stream link");
                 }
@@ -2506,62 +2622,85 @@
                 showAlert("Playback error or Portal rejected the link");
             }
         }
-
-
         function stopPlayers() {
-            if (hls) { hls.destroy(); hls = null; }
+            // Clear the playback monitor timer before tearing down the player
+            if (monitorTimer !== null) {
+                clearInterval(monitorTimer);
+                monitorTimer = null;
+            }
+            // Bump generation so any in-flight callbacks from the old player
+            // recognise they've been superseded and bail without touching
+            // the <video> element or a newer mpegPlayer instance.
+            playerGeneration++;
+            const cleanupGen = playerGeneration;
+            const playerToCleanup = mpegPlayer;
             if (mpegPlayer) {
-                // Store reference locally and clear global immediately
-                const playerToCleanup = mpegPlayer;
                 mpegPlayer = null;
-                
+            }
+            if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+            if (!playerToCleanup) {
+                // No mpegPlayer — safe to reset the <video> element
+                // synchronously. This is the rapid-switch path:
+                // user clicks channel A then channel B before A's
+                // player was even created. There's nothing to tear
+                // down; just clear any leftover state.
+                const video = document.getElementById('video');
+                if (video) {
+                    try { video.pause(); } catch (e) { /* suppress */ }
+                    try {
+                        video.removeAttribute('src');
+                        video.load();
+                    } catch (e) { /* suppress */ }
+                }
+                return;
+            }
+
+            queueMicrotask(() => {
+                if (playerGeneration !== cleanupGen) return;
                 try {
-                    // Stop all internal processing first
                     if (typeof playerToCleanup.pause === 'function') {
                         playerToCleanup.pause();
                     }
                 } catch (e) { /* suppress */ }
-                
                 try {
-                    // Unload stops the internal loader loop
                     if (typeof playerToCleanup.unload === 'function') {
                         playerToCleanup.unload();
                     }
                 } catch (e) { /* suppress */ }
-                
-                // Small delay to let pending promises settle before detaching
-                setTimeout(() => {
-                    try {
-                        if (typeof playerToCleanup.detachMediaElement === 'function') {
-                            playerToCleanup.detachMediaElement();
-                        }
-                    } catch (e) { /* suppress SourceBuffer errors */ }
-                    
-                    try {
-                        if (typeof playerToCleanup.destroy === 'function') {
-                            playerToCleanup.destroy();
-                        }
-                    } catch (e) { /* suppress SourceBuffer errors */ }
-                }, 100); // Increased delay for better promise settlement
-            }
-            const video = document.getElementById('video');
-            if (video) {
+                if (playerGeneration !== cleanupGen) return;
                 try {
-                    video.pause();
-                } catch (e) { /* suppress */ }
+                    if (typeof playerToCleanup.detachMediaElement === 'function') {
+                        playerToCleanup.detachMediaElement();
+                    }
+                } catch (e) { /* suppress SourceBuffer errors */ }
+                let destroyResult = null;
                 try {
-                    video.removeAttribute('src');
-                    video.load();
-                } catch (e) { /* suppress */ }
-            }
+                    if (typeof playerToCleanup.destroy === 'function') {
+                        destroyResult = playerToCleanup.destroy();
+                    }
+                } catch (e) { /* suppress SourceBuffer errors */ }
+                const destroyPromise =
+                    (destroyResult && typeof destroyResult.then === 'function')
+                        ? destroyResult
+                        : Promise.resolve();
+                destroyPromise.then(() => {
+                    if (playerGeneration !== cleanupGen) return;
+                    const video = document.getElementById('video');
+                    if (!video) return;
+                    try { video.pause(); } catch (e) { /* suppress */ }
+                    try {
+                        video.removeAttribute('src');
+                        video.load();
+                    } catch (e) { /* suppress */ }
+                }).catch(() => { /* swallow */ });
+            });
         }
 
-        function startPlayer(proxyUrl, name) {
+        function startPlayer(proxyUrl, name, directUrl) {
             const video = document.getElementById('video');
             stopPlayers();
 
             document.getElementById('ch-name-display').innerText = name + " (Initializing...)";
-
             // Stream type detection - check multiple indicators
             let isHls = false;
             let streamType = 'mpegts';  // Default for IPTV
@@ -2698,8 +2837,29 @@
                             return;
                         }
 
+                        // Capture the generation at the moment this
+                        // tryMpegtsPlayer() call started. If a newer
+                        // stopPlayers() runs while we're waiting for
+                        // the setTimeout/validateStream, it will
+                        // bump playerGeneration and we'll bail out
+                        // below — preventing two mpegPlayer instances
+                        // from racing over the same <video> element
+                        // when the user clicks channels rapidly.
+                        const myGen = playerGeneration;
+
                         // Small delay to allow previous player cleanup
                         setTimeout(async () => {
+                            // Bail if this playback has been superseded
+                            // by a newer startPlayer() call. The newer
+                            // call already owns the <video> element;
+                            // creating a new mpegPlayer here would
+                            // overwrite the newer player's state and
+                            // re-trigger the same SourceBuffer race
+                            // we're trying to fix.
+                            if (playerGeneration !== myGen) {
+                                resolve({ success: false, reason: 'Superseded by newer playback' });
+                                return;
+                            }
                             if (!video.isConnected) {
                                 resolve({ success: false, reason: 'Video element removed' });
                                 return;
@@ -2718,6 +2878,20 @@
                                 // Continue anyway - validation is best-effort
                             }
 
+                            // Re-check the generation after the async
+                            // validateStream call. validateStream can
+                            // take up to 60s (timeout in the preflight
+                            // request), during which the user can
+                            // easily have clicked another channel.
+                            // Without this re-check, a stale player
+                            // would be created and attached to a
+                            // <video> element now owned by a newer
+                            // playback — the exact race condition
+                            // we're trying to fix.
+                            if (playerGeneration !== myGen) {
+                                resolve({ success: false, reason: 'Superseded by newer playback' });
+                                return;
+                            }
                              // Enhanced configuration for better compatibility
                              const mpegConfig = {
                                  enableWorker: true,
@@ -2736,11 +2910,18 @@
                                  bufferDelay: 500,  // Increased from 200ms for smoother playback
                              };
 
-                            mpegPlayer = mpegts.createPlayer({
+                            // Capture the player instance in a local
+                            // so async callbacks (the .play()
+                            // promise, the ERROR handler) can
+                            // detect that the global mpegPlayer has
+                            // been replaced by stopPlayers() — and
+                            // therefore the event is stale.
+                            const myPlayer = mpegts.createPlayer({
                                 type: 'mpegts',
                                 isLive: true,
                                 url: proxyUrl
                             }, mpegConfig);
+                            mpegPlayer = myPlayer;
 
                             // Wrap player methods for error suppression
                             const wrapMethod = (method, errorName) => {
@@ -2778,9 +2959,28 @@
                             });
 
                             mpegPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
+                                // Stale-event guard. The mpegts worker
+                                // can fire ERROR events after the
+                                // player has been torn down by
+                                // stopPlayers() (or superseded by a
+                                // newer playback). Those events must
+                                // NOT cause us to log/resolve, because
+                                // the stats we read off the player
+                                // belong to a dead instance and the
+                                // orchestrator's `if (mpegResult.success
+                                // && mpegPlayer)` check would
+                                // incorrectly bind to a newer player.
+                                if (playerGeneration !== myGen) return;
+                                // Compare against the local myPlayer
+                                // capture (not the global) so a stale
+                                // ERROR event from a torn-down
+                                // instance is detected even if a
+                                // newer playback has since taken
+                                // over the global mpegPlayer.
+                                if (mpegPlayer !== myPlayer) return;
                                 // Check for audio codec errors (AC-3, EAC-3, etc. not supported in MSE)
                                 const errorStr = (info && info.msg || '') + ' ' + (detail || '');
-                                const isAudioCodecError = errorStr.toLowerCase().includes('audio/mp4') && 
+                                const isAudioCodecError = errorStr.toLowerCase().includes('audio/mp4') &&
                                     (errorStr.includes('ac-3') || errorStr.includes('eac-3') || errorStr.includes('unsupported'));
                                 
                                 if (isAudioCodecError) {
@@ -2918,10 +3118,13 @@
                                      console.warn('Low data received, stream may be stalled');
                                  }
                              };
-                             setInterval(monitorPlayback, 5000);
+                             // Clear any previous monitor before starting a new one
+                             if (monitorTimer !== null) {
+                                 clearInterval(monitorTimer);
+                                 monitorTimer = null;
+                             }
+                             monitorTimer = setInterval(monitorPlayback, 5000);
                              break; // Success, exit retry loop
-                         } else {
-                             console.log('mpegts.js MSE failed:', mpegResult.reason);
                              
                              // Determine error type for retry decision
                              let shouldRetry = false;
@@ -2968,7 +3171,7 @@
                                              break;
                                          } else {
                                              console.log('Direct playback failed:', directResult.reason);
-                                             finalErrorDesc = 'Your browser cannot decode this MPEG-TS stream. This is common on Linux due to missing browser codecs. Try using an external player like VLC.';
+                                             finalErrorDesc = 'This stream server is rejecting inline playback. To watch, copy the command below and run it in a terminal: vlc "URL" :http-user-agent=Lavf53.32.100';
                                          }
                                      }
                                  }
@@ -2982,13 +3185,68 @@
                              }
                          }
                      }
-                     
                      // Display error only after all retries exhausted
                      if (!playbackSucceeded) {
                          document.getElementById('ch-name-display').innerText = name + ' (' + finalErrorTitle + ')';
                          document.getElementById('playerErrorTitle').innerText = finalErrorTitle;
                          document.getElementById('playerErrorDesc').innerText = finalErrorDesc;
                          document.getElementById('playerErrorOverlay').style.display = 'flex';
+
+                         // Show the "Open in VLC" button.
+                         // The WAF on this portal rejects browser-based playback but
+                         // accepts VLC connections. However, VLC must be launched with
+                         // `:http-user-agent=Lavf53.32.100` (FFmpeg's UA) because the
+                         // WAF also checks the User-Agent — VLC's default (LibVLC/3.x)
+                         // is rejected. The Cyogenus reference player does exactly this:
+                         // subprocess.Popen([vlc, url, ":http-user-agent=Lavf53.32.100"])
+                         const btnDirect = document.getElementById('btnPlayDirect');
+                         const makeVlcCommand = (url) =>
+                             `vlc "${url}" :http-user-agent=Lavf53.32.100`;
+                         btnDirect.style.display = 'inline-flex';
+                         btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                         btnDirect.onclick = async () => {
+                             try {
+                                 btnDirect.disabled = true;
+                                 btnDirect.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting fresh link...';
+                                 const res = await fetch('/api/get_link', {
+                                     method: 'POST',
+                                     headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify({
+                                         url: lastPlayedPortal.url,
+                                         mac: lastPlayedPortal.mac,
+                                         cmd: lastPlayedChannel.cmd
+                                     })
+                                 });
+                                 const data = await res.json();
+                                 if (data.direct_url) {
+                                     const cmd = makeVlcCommand(data.direct_url);
+                                     try {
+                                         await navigator.clipboard.writeText(cmd);
+                                         btnDirect.innerHTML = '<i class="fas fa-check"></i> Command copied! Run in terminal';
+                                         btnDirect.disabled = false;
+                                         setTimeout(() => {
+                                             btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                                         }, 4000);
+                                     } catch (clipErr) {
+                                         window.prompt(
+                                             'Copy and run this command in a terminal:',
+                                             cmd
+                                         );
+                                         btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                                         btnDirect.disabled = false;
+                                     }
+                                 } else {
+                                     showAlert('Could not get stream link');
+                                     btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                                     btnDirect.disabled = false;
+                                 }
+                             } catch (e) {
+                                 console.error('VLC command copy failed:', e);
+                                 showAlert('Failed to get stream link');
+                                 btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                                 btnDirect.disabled = false;
+                             }
+                         };
                      }
                  })();
             }
