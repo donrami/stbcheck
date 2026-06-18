@@ -2869,6 +2869,36 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url: p.url, mac: p.mac, cmd: ch.cmd })
                 });
+
+                // 503 with Retry-After means the circuit breaker tripped.
+                // Auto-retry once after the suggested delay instead of
+                // failing immediately — this is a transient portal-side
+                // condition and the user shouldn't have to manually retry.
+                if (res.status === 503) {
+                    const retryAfter = parseInt(res.headers.get('Retry-After') || '30', 10);
+                    setPlayerStatus('retrying', `Portal busy — retrying in ${retryAfter}s…`);
+                    await new Promise(r => setTimeout(r, retryAfter * 1000));
+                    const retryRes = await fetch('/api/get_link', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: p.url, mac: p.mac, cmd: ch.cmd })
+                    });
+                    if (!retryRes.ok) {
+                        setPlayerStatus('failed', 'Portal rate-limited');
+                        showAlert(`The portal is temporarily rate-limiting requests (HTTP ${retryRes.status}). Try again in a minute.`);
+                        return;
+                    }
+                    const retryData = await retryRes.json();
+                    if (retryData.url) {
+                        const absoluteUrl = window.location.origin + retryData.url;
+                        startPlayer(absoluteUrl, ch.name, retryData.direct_url || absoluteUrl);
+                    } else {
+                        setPlayerStatus('failed', 'No stream link returned');
+                        showAlert("Couldn't get a stream link for this channel. The portal may have refused the request — try a different channel or check your subscription.");
+                    }
+                    return;
+                }
+
                 const data = await res.json();
                 if (data.url) {
                     const absoluteUrl = window.location.origin + data.url;
