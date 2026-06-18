@@ -2857,12 +2857,12 @@
                     startPlayer(absoluteUrl, ch.name, data.direct_url || absoluteUrl);
                 } else {
                     setPlayerStatus('failed', 'No stream link returned');
-                    showAlert("Could not get stream link");
+                    showAlert("Couldn't get a stream link for this channel. The portal may have refused the request — try a different channel or check your subscription.");
                 }
             } catch (e) {
                 console.error("Playback failed:", e);
                 setPlayerStatus('failed', 'Network error');
-                showAlert("Playback error or Portal rejected the link");
+                showAlert("Playback failed — the portal rejected the request or the connection dropped. Try again, or pick another channel.");
             }
         }
         function stopPlayers() {
@@ -3394,7 +3394,7 @@
                                      break;
                                  } else {
                                      finalErrorTitle = 'Audio Codec Not Supported';
-                                     finalErrorDesc = 'This stream uses AC-3/Dolby audio which browsers cannot decode. Video may play without sound in VLC.';
+                                    finalErrorDesc = 'This stream uses AC-3/Dolby audio that browsers can\'t decode. Video will play silently here — open in VLC for full audio, or use a player with AC-3 support.';
                                     finalErrorCategory = 'audio';
                                  }
                              } else {
@@ -3406,7 +3406,7 @@
                                  
                                  if (isHEVC) {
                                      finalErrorTitle = 'HEVC/H.265 Not Supported';
-                                     finalErrorDesc = 'This channel uses HEVC video codec which requires Chrome 107+ with hardware support, or an external player.';
+                                    finalErrorDesc = 'This channel uses HEVC/H.265 video. Browsers don\'t support it by default. Open in VLC, or use Chrome 107+ with hardware HEVC decoding.';
                                     finalErrorCategory = 'hevc';
                                  } else {
                                      // Check if this might be a proxy/portal error
@@ -3418,7 +3418,7 @@
                                      
                                      if (isProxyError) {
                                          finalErrorTitle = 'Stream Connection Error';
-                                         finalErrorDesc = 'The portal blocked or redirected this stream. This may be a portal subscription issue.';
+                                        finalErrorDesc = 'The portal blocked or redirected this stream — likely a subscription check or WAF. Open in VLC to play directly with the included User-Agent override.';
                                         finalErrorCategory = 'waf';
                                      } else {
                                          // Try direct playback as fallback
@@ -3430,7 +3430,7 @@
                                              break;
                                          } else {
                                              console.log('Direct playback failed:', directResult.reason);
-                                             finalErrorDesc = 'This stream server is rejecting inline playback. To watch, copy the command below and run it in a terminal: vlc "URL" :http-user-agent=Lavf53.32.100';
+                                            finalErrorDesc = 'The stream server is rejecting inline playback. Try opening in VLC — it sends a User-Agent the server accepts. If that fails, the stream may be offline.';
                                             finalErrorCategory = finalErrorCategory || 'network';
                                          }
                                      }
