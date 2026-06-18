@@ -851,6 +851,38 @@
             transform: rotate(90deg);
         }
 
+        .error-category-badge {
+            display: inline-block;
+            padding: var(--space-1) var(--space-4);
+            border-radius: var(--radius-full);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-bold);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: var(--space-4);
+            background: var(--color-error-bg);
+            color: var(--color-error);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .player-error-overlay[data-error-category="hevc"] .error-category-badge,
+        .player-error-overlay[data-error-category="audio"] .error-category-badge {
+            background: var(--color-warning-bg);
+            color: var(--color-warning);
+            border-color: rgba(251, 191, 36, 0.3);
+        }
+
+        .player-error-overlay[data-error-category="waf"] .error-category-badge {
+            background: var(--accent-subtle);
+            color: var(--accent-hover);
+            border-color: var(--border-subtle);
+        }
+
+        .player-error-overlay[data-error-category="hevc"] .error-icon,
+        .player-error-overlay[data-error-category="audio"] .error-icon {
+            color: var(--color-warning);
+        }
+
         .error-icon {
             font-size: var(--font-size-3xl);
             color: var(--color-error);
@@ -1663,11 +1695,12 @@
     <main class="main-content" id="main-content" role="main">
         <div class="player-container">
             <video id="video" controls></video>
-            <div class="player-error-overlay" id="playerErrorOverlay">
+            <div class="player-error-overlay" id="playerErrorOverlay" data-error-category="">
                 <button class="close-overlay"
                     onclick="document.getElementById('playerErrorOverlay').style.display='none'"
                     aria-label="Close error message"><span aria-hidden="true">&times;</span></button>
-                <div class="error-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                <div class="error-category-badge" id="errorCategoryBadge">Error</div>
+                <div class="error-icon" id="errorIcon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></div>
                 <div class="error-title" id="playerErrorTitle">Playback Failed</div>
                 <div class="error-desc" id="playerErrorDesc">This stream format (likely HEVC/H.265) is not supported by
                     your browser.</div>
@@ -2085,6 +2118,28 @@
                 icon = '<i class="fas fa-exclamation-circle" aria-hidden="true"></i> ';
             }
             pill.innerHTML = icon + escapeHTML(message);
+        }
+
+        // Sets the error category on the player error overlay. Updates the
+        // category badge text, the overlay icon, and a data attribute used
+        // by CSS to recolor per category.
+        // Categories: 'hevc', 'audio', 'waf', 'network', '' (default).
+        const PLAYER_ERROR_CATEGORIES = {
+            hevc:    { label: 'HEVC',    icon: 'fa-video-slash' },
+            audio:   { label: 'Audio',   icon: 'fa-volume-mute' },
+            waf:     { label: 'WAF',     icon: 'fa-shield-halved' },
+            network: { label: 'Network', icon: 'fa-wifi' },
+            '':      { label: 'Error',   icon: 'fa-exclamation-triangle' }
+        };
+        function setErrorCategory(category) {
+            const overlay = document.getElementById('playerErrorOverlay');
+            const badge = document.getElementById('errorCategoryBadge');
+            const icon = document.getElementById('errorIcon');
+            if (!overlay || !badge || !icon) return;
+            const meta = PLAYER_ERROR_CATEGORIES[category] || PLAYER_ERROR_CATEGORIES[''];
+            overlay.dataset.errorCategory = category || '';
+            badge.textContent = meta.label;
+            icon.innerHTML = '<i class="fas ' + meta.icon + '" aria-hidden="true"></i>';
         }
 
         function openModal(modalId) {
@@ -3286,6 +3341,7 @@
                      let playbackSucceeded = false;
                      let finalErrorTitle = 'Playback Error';
                      let finalErrorDesc = 'Unable to play this stream.';
+                     let finalErrorCategory = '';
                      while (attempt < maxRetries && !playbackSucceeded) {
                          attempt++;
                          console.log(`Playback attempt ${attempt}/${maxRetries}...`);
@@ -3339,6 +3395,7 @@
                                  } else {
                                      finalErrorTitle = 'Audio Codec Not Supported';
                                      finalErrorDesc = 'This stream uses AC-3/Dolby audio which browsers cannot decode. Video may play without sound in VLC.';
+                                    finalErrorCategory = 'audio';
                                  }
                              } else {
                                  // Check for HEVC
@@ -3350,6 +3407,7 @@
                                  if (isHEVC) {
                                      finalErrorTitle = 'HEVC/H.265 Not Supported';
                                      finalErrorDesc = 'This channel uses HEVC video codec which requires Chrome 107+ with hardware support, or an external player.';
+                                    finalErrorCategory = 'hevc';
                                  } else {
                                      // Check if this might be a proxy/portal error
                                      const errorStrLower = (mpegResult.reason || '').toLowerCase();
@@ -3361,6 +3419,7 @@
                                      if (isProxyError) {
                                          finalErrorTitle = 'Stream Connection Error';
                                          finalErrorDesc = 'The portal blocked or redirected this stream. This may be a portal subscription issue.';
+                                        finalErrorCategory = 'waf';
                                      } else {
                                          // Try direct playback as fallback
                                          console.log('Trying direct playback as fallback...');
@@ -3372,6 +3431,7 @@
                                          } else {
                                              console.log('Direct playback failed:', directResult.reason);
                                              finalErrorDesc = 'This stream server is rejecting inline playback. To watch, copy the command below and run it in a terminal: vlc "URL" :http-user-agent=Lavf53.32.100';
+                                            finalErrorCategory = finalErrorCategory || 'network';
                                          }
                                      }
                                  }
@@ -3389,6 +3449,7 @@
                     if (!playbackSucceeded) {
                         document.getElementById('ch-name-display').innerText = name;
                         setPlayerStatus('failed', finalErrorTitle);
+                        setErrorCategory(finalErrorCategory);
                         document.getElementById('playerErrorTitle').innerText = finalErrorTitle;
                         document.getElementById('playerErrorDesc').innerText = finalErrorDesc;
                         document.getElementById('playerErrorOverlay').style.display = 'flex';
