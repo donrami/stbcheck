@@ -3050,8 +3050,10 @@
                                 resolve({ success: false, reason: 'Video element removed' });
                                 return;
                             }
-
-                            // Preflight: Validate stream is returning valid MPEG-TS data
+                            // Preflight: Validate stream is returning valid MPEG-TS data.
+                            // This can take up to 60s — tell the user so they
+                            // don't think playback is hung.
+                            setPlayerStatus('validating', 'Validating stream format…');
                             try {
                                 const validationResult = await validateStream(proxyUrl);
                                 if (!validationResult.valid) {
@@ -3063,7 +3065,7 @@
                                 console.warn('Stream validation error:', e);
                                 // Continue anyway - validation is best-effort
                             }
-
+                            setPlayerStatus('connecting', 'Connecting to stream…');
                             // Re-check the generation after the async
                             // validateStream call. validateStream can
                             // take up to 60s (timeout in the preflight
@@ -3275,10 +3277,12 @@
                      let playbackSucceeded = false;
                      let finalErrorTitle = 'Playback Error';
                      let finalErrorDesc = 'Unable to play this stream.';
-                     
                      while (attempt < maxRetries && !playbackSucceeded) {
                          attempt++;
                          console.log(`Playback attempt ${attempt}/${maxRetries}...`);
+                         // Surface the retry counter in the status pill so the
+                         // user knows we're still trying, not hung.
+                         setPlayerStatus('retrying', `Retrying (${attempt}/${maxRetries})…`);
                          
                          // Clean up any previous player instance
                          if (mpegPlayer) {
