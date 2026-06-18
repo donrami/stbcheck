@@ -904,6 +904,20 @@
             line-height: var(--line-height-relaxed);
         }
 
+        .error-actions {
+            display: inline-flex;
+            gap: var(--space-3);
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        #btnRetryPlayback {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
         .btn-external-fix {
             background: var(--color-warning);
             color: var(--bg-base);
@@ -1704,11 +1718,15 @@
                 <div class="error-title" id="playerErrorTitle">Playback Failed</div>
                 <div class="error-desc" id="playerErrorDesc">This stream format (likely HEVC/H.265) is not supported by
                     your browser.</div>
-                <button class="btn-external-fix" id="btnPlayDirect" style="display:none"
-                    aria-label="Open stream in external player">
-                    <i class="fas fa-external-link-alt"></i> Open in external player
-                </button>
-            </div>
+                <div class="error-actions">
+                    <button class="btn-primary" id="btnRetryPlayback" aria-label="Retry playback">
+                        <i class="fas fa-rotate-right"></i> Retry
+                    </button>
+                    <button class="btn-external-fix" id="btnPlayDirect" style="display:none"
+                        aria-label="Open stream in external player">
+                        <i class="fas fa-external-link-alt"></i> Open in external player
+                    </button>
+                </div>
             <div id="now-playing">NOW PLAYING: <span id="ch-name-display">None</span><span id="player-status" class="player-status" data-state="idle" aria-live="polite" role="status"></span></div>
         </div>
 
@@ -3463,6 +3481,16 @@
                          // Configure the "Open in VLC" button copy + command based
                          // on the error category. Codec errors (hevc/audio) don't
                          // need the WAF UA workaround — only WAF and network errors do.
+                         // Wire the retry button to replay the last channel.
+                         // Hide the overlay and re-trigger playChannel.
+                         const btnRetry = document.getElementById('btnRetryPlayback');
+                         btnRetry.onclick = async () => {
+                             if (lastPlayedChannel) {
+                                 document.getElementById('playerErrorOverlay').style.display = 'none';
+                                 await playChannel(lastPlayedChannel);
+                             }
+                         };
+
                          const btnDirect = document.getElementById('btnPlayDirect');
                          const isWafLike = finalErrorCategory === 'waf' || finalErrorCategory === 'network' || !finalErrorCategory;
                          const makeVlcCommand = (url) =>
