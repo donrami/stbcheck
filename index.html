@@ -2329,6 +2329,11 @@
                             } else if (data.type === 'progress') {
                                 // One more portal checked — update the determinate bar in place
                                 renderDiscoveryStatus({ type: 'progress', current: data.current, total: data.total });
+                            } else if (data.type === 'error') {
+                                // Backend sent an error event (e.g. no pairs found upstream).
+                                // Render it explicitly so the user sees the actual reason,
+                                // not a generic "no working portals" message.
+                                renderDiscoveryStatus({ type: 'error', message: data.message });
                             } else if (data.type === 'result') {
                                 // Skip portals with no channels to avoid empty server entries
                                 if (data.result && (data.result.channel_count === 0 || (Array.isArray(data.result.channels) && data.result.channels.length === 0))) {
