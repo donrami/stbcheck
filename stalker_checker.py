@@ -6,14 +6,11 @@ from datetime import datetime
 
 import gc
 
-# Global Session
-session_pool = requests.Session()
-session_pool.headers.update(
-    {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
-        "Connection": "keep-alive",
-    }
-)
+# Per-portal default session headers
+_DEFAULT_SESSION_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
+    "Connection": "keep-alive",
+}
 
 
 class StalkerPortal:
@@ -21,7 +18,10 @@ class StalkerPortal:
         # Base cleanup
         self.base_url = portal_url.rstrip("/")
         self.mac = mac_address.upper()
-        self.session = session_pool
+        # Each portal gets its own session so cookies and connection state
+        # don't leak between different portals.
+        self.session = requests.Session()
+        self.session.headers.update(_DEFAULT_SESSION_HEADERS)
         self.token = None
         self.active_path = None
 
