@@ -1,39 +1,60 @@
+# Python
 __pycache__/
-*.log
-check_result.json
 *.pyc
 venv/
+*.egg-info/
+
+# Logs / data
+*.log
+check_result.json
+portal_dump
+progress.md
+
+# Environment / secrets
 .env
+.env.*
+secrets.*
+.omp/
+*.pem
+oauth*.json
+
+# User data
+verified_servers.json
+
+# Vercel
 .vercel
 
-# IDE / AI tooling
+# IDE
+.idea/
+.vscode/
+
+# AI agent tooling — local configs per tool
+.claude/
 .kilocode/
 .kilo/
 .agents/
+.agent/
+.cursor/
+.windsurf/
+.gemini/
 .impeccable.md
 skills-lock.json
-.claude
-AGENTS.md
-.pi/
-
-# Dev-only documentation
-docs/
+.mcp.json
 
 # Debug / scratch scripts
 debug_categories.py
-
-# User data / credentials
-verified_servers.json
+test_edge.py
+test_proximity.py
 
 # Tool caches
 .pytest_cache/
 .ruff_cache/
-.mcp.json
 
-# Repowise
-.repowise
-portal_dump
-progress.md
-test_edge.py
-test_proximity.py
-tests
+# Dev-only documentation
+docs/
+
+# Harness memory directories (e.g. memory:/, memory:foo/)
+memory:*/
+
+# AI tool caches
+.socraticodecontextartifacts.json

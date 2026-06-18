@@ -206,7 +206,6 @@ stbcheck/
 │       ├── text_parser.py        # Input parsing utilities
 │       └── stalker_detection.py  # Stalker portal detection
 ├── stalker_checker.py            # Standalone CLI tool
-├── config.py                     # Legacy config (not used by app)
 ├── index.html                    # Frontend interface
 ├── requirements.txt
 ├── pytest.ini
