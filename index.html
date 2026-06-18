@@ -3460,12 +3460,20 @@
                          // `:http-user-agent=Lavf53.32.100` (FFmpeg's UA) because the
                          // WAF also checks the User-Agent — VLC's default (LibVLC/3.x)
                          // is rejected. The Cyogenus reference player does exactly this:
-                         // subprocess.Popen([vlc, url, ":http-user-agent=Lavf53.32.100"])
+                         // Configure the "Open in VLC" button copy + command based
+                         // on the error category. Codec errors (hevc/audio) don't
+                         // need the WAF UA workaround — only WAF and network errors do.
                          const btnDirect = document.getElementById('btnPlayDirect');
+                         const isWafLike = finalErrorCategory === 'waf' || finalErrorCategory === 'network' || !finalErrorCategory;
                          const makeVlcCommand = (url) =>
-                             `vlc "${url}" :http-user-agent=Lavf53.32.100`;
+                             isWafLike
+                                 ? `vlc "${url}" :http-user-agent=Lavf53.32.100`
+                                 : `vlc "${url}"`;
+                         const btnLabel = isWafLike
+                             ? '<i class="fas fa-terminal"></i> Open in VLC'
+                             : '<i class="fas fa-terminal"></i> Open in VLC (codec support)';
                          btnDirect.style.display = 'inline-flex';
-                         btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                         btnDirect.innerHTML = btnLabel;
                          btnDirect.onclick = async () => {
                              try {
                                  btnDirect.disabled = true;
@@ -3487,25 +3495,25 @@
                                          btnDirect.innerHTML = '<i class="fas fa-check"></i> Command copied! Run in terminal';
                                          btnDirect.disabled = false;
                                          setTimeout(() => {
-                                             btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                                             btnDirect.innerHTML = btnLabel;
                                          }, 4000);
                                      } catch (clipErr) {
                                          window.prompt(
                                              'Copy and run this command in a terminal:',
                                              cmd
                                          );
-                                         btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                                         btnDirect.innerHTML = btnLabel;
                                          btnDirect.disabled = false;
                                      }
                                  } else {
                                      showAlert('Could not get stream link');
-                                     btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                                     btnDirect.innerHTML = btnLabel;
                                      btnDirect.disabled = false;
                                  }
                              } catch (e) {
                                  console.error('VLC command copy failed:', e);
                                  showAlert('Failed to get stream link');
-                                 btnDirect.innerHTML = '<i class="fas fa-terminal"></i> Open in VLC';
+                                 btnDirect.innerHTML = btnLabel;
                                  btnDirect.disabled = false;
                              }
                          };
