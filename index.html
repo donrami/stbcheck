@@ -2250,11 +2250,12 @@
         let displayedCount = CHANNELS_PER_PAGE;
         let filteredChannels = [];
 
-
-        // Renders the channelsGrid empty-state during portal discovery.
-        // Handles four sub-states: status (indeterminate), start/progress
-        // (determinate with bar), and error. For 'progress' events we
-        // update the existing bar in place to avoid flicker.
+        // Renders the channelsGrid empty-state. Handles four sub-states
+        // used by portal discovery — status (indeterminate spinner),
+        // start/progress (determinate with bar), and error — plus a
+        // general 'empty' state used by the channel grid (no search
+        // results, no channels in category, etc.). For 'progress' events
+        // we update the existing bar in place to avoid flicker.
         function renderDiscoveryStatus(state) {
             const grid = document.getElementById('channelsGrid');
             if (!grid) return;
@@ -2302,6 +2303,17 @@
                     <div class="empty-state is-error" style="grid-column: 1/-1; margin-top: var(--space-12);">
                         <i class="fas fa-exclamation-triangle"></i>
                         <div class="empty-state-message">${escapeHTML(state.message || 'Something went wrong.')}</div>
+                    </div>
+                `;
+                return;
+            }
+
+            if (type === 'empty') {
+                const icon = state.icon || 'fa-folder-open';
+                grid.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
+                        <i class="fas ${icon}"></i>
+                        <div class="empty-state-message">${escapeHTML(state.message || 'Nothing to show.')}</div>
                     </div>
                 `;
                 return;
@@ -2416,12 +2428,11 @@
                                 }
                             } else if (data.type === 'complete') {
                                 if (currentPortals.length === 0) {
-                                    document.getElementById('channelsGrid').innerHTML = `
-                                        <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
-                                            <i class="fas fa-exclamation-triangle"></i>
-                                            No working portals found. Check your input and try again.
-                                        </div>
-                                    `;
+                                    renderDiscoveryStatus({
+                                        type: 'empty',
+                                        message: 'No working portals found. Check your input and try again.',
+                                        icon: 'fa-exclamation-triangle'
+                                    });
                                 }
                             }
                         } catch (e) {
@@ -2619,15 +2630,13 @@
             }
 
             if (filteredChannels.length === 0 && !append) {
-                const message = channelSearchQuery
-                    ? `No channels found matching "${escapeHTML(channelSearchQuery)}"`
-                    : 'No channels in this category.';
-                grid.innerHTML = `
-                    <div class="empty-state" style="grid-column: 1/-1; margin-top: var(--space-12);">
-                        <i class="fas fa-search"></i>
-                        ${message}
-                    </div>
-                `;
+                renderDiscoveryStatus({
+                    type: 'empty',
+                    message: channelSearchQuery
+                        ? `No channels found matching "${escapeHTML(channelSearchQuery)}"`
+                        : 'No channels in this category.',
+                    icon: 'fa-search'
+                });
             }
         }
 
