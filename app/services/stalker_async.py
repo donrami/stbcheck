@@ -28,7 +28,6 @@ from app.services.base import (
     extract_token,
     unwrap_response,
     MAG200_USER_AGENT,
-    MAG250_XUA,
 )
 from app.services.expiry import detect_expiry_with_source
 from app.services.date_utils import parse_expiry_date
@@ -74,6 +73,7 @@ class StalkerClient:
         timeout: Request timeout in seconds (default: 10)
         enable_cache: Whether to enable response caching (default: False)
         cache_ttl: Cache TTL in seconds (default: 300)
+        x_user_agent: X-User-Agent header value (default: settings.x_user_agent)
     """
 
     def __init__(
@@ -83,6 +83,7 @@ class StalkerClient:
         timeout: int = settings.request_timeout,
         enable_cache: bool = False,
         cache_ttl: int = settings.logo_cache_ttl,
+        x_user_agent: str = settings.x_user_agent,
     ):
         """
         Initialize the StalkerClient with portal URL and MAC address.
@@ -93,12 +94,14 @@ class StalkerClient:
             timeout: Request timeout in seconds (default: 10)
             enable_cache: Enable in-memory caching of expiration results
             cache_ttl: Cache TTL in seconds (default: 300)
+            x_user_agent: Override the configured X-User-Agent header value
         """
         self.base_url = portal_url.rstrip("/")
         self.mac = mac_address.upper()
         self.stb_lang = "en"
         self.timezone = getattr(settings, "default_timezone", "Europe/London")
         self.timeout = timeout
+        self.x_user_agent = x_user_agent
         self._session: Optional[aiohttp.ClientSession] = None
         self._token: Optional[str] = None
         self._active_path: Optional[str] = None
@@ -120,7 +123,7 @@ class StalkerClient:
             "Accept": "*/*",
             "Accept-Charset": "UTF-8,*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
-            "X-User-Agent": MAG250_XUA,
+            "X-User-Agent": self.x_user_agent,
             "Referer": f"{self.base_url}/",
             "Connection": "keep-alive",
         }
@@ -145,7 +148,11 @@ class StalkerClient:
             )
 
     async def _request(
-        self, params: Dict[str, str], path: Optional[str] = None
+        self,
+        params: Dict[str, str],
+        path: Optional[str] = None,
+        *,
+        retry: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """
         Make an asynchronous HTTP request to the portal.
@@ -175,6 +182,19 @@ class StalkerClient:
                 if response.status == 404:
                     return None
 
+                if response.status in (401, 403):
+                    if retry:
+                        logger.debug(
+                            f"HTTP {response.status} persists on {target_path} after re-handshake"
+                        )
+                        return None
+                    logger.info(
+                        f"HTTP {response.status} on {target_path}; clearing token and re-running handshake"
+                    )
+                    self._clear_auth_state()
+                    await self._handshake()
+                    return await self._request(params, path=path, retry=True)
+
                 response.raise_for_status()
                 try:
                     data = await response.json()
@@ -187,6 +207,18 @@ class StalkerClient:
                         return None
 
                 data = unwrap_response(data)
+                if self._is_authorization_failure(data):
+                    if retry:
+                        logger.debug(
+                            f"Authorization failure persists on {target_path} after re-handshake"
+                        )
+                        return data
+                    logger.info(
+                        f"Authorization failure on {target_path}; clearing token and re-running handshake"
+                    )
+                    self._clear_auth_state()
+                    await self._handshake()
+                    return await self._request(params, path=path, retry=True)
                 return data
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             logger.debug(f"Request error to {target_path}: {e}")
@@ -243,6 +275,11 @@ class StalkerClient:
                     else js_obj
                 )
 
+                if self._is_authorization_failure(js_obj):
+                    logger.debug(
+                        f"Authorization failure in response from {target_path}: {js_obj}"
+                    )
+
                 return {
                     "raw": data,
                     "js": js_obj if isinstance(js_obj, dict) else {},
@@ -256,6 +293,44 @@ class StalkerClient:
         except Exception as e:
             logger.debug(f"Unexpected error during request: {e}")
             return None
+
+    @staticmethod
+    def _is_authorization_failure(data: Any) -> bool:
+        """
+        Detect authorization failures hidden inside HTTP 200 responses.
+
+        Some portals return HTTP 200 with a body signaling an expired or
+        missing token instead of a proper 401/403.
+
+        Args:
+            data: Parsed (and unwrapped) response payload
+
+        Returns:
+            True if the payload indicates an authorization failure
+        """
+        if not isinstance(data, dict):
+            return False
+        if data.get("authorization_failed"):
+            return True
+        for key in ("error", "message"):
+            value = data.get(key)
+            if isinstance(value, str) and "authorization" in value.lower():
+                return True
+        return False
+
+    def _clear_auth_state(self) -> None:
+        """
+        Clear the cached token from state and the session cookie jar.
+
+        Called before a re-handshake so the portal never sees a stale or
+        expired token cookie alongside the new handshake request.
+        """
+        self._token = None
+        try:
+            root_url = URL(self.base_url).with_path("/")
+            self._session.cookie_jar.update_cookies({"token": ""}, root_url)
+        except Exception as e:
+            logger.debug(f"Failed to clear token cookie: {e}")
 
     async def _handshake(self) -> bool:
         """
@@ -686,7 +761,12 @@ class StalkerClient:
                 "type": "stb",
                 "action": "get_profile",
                 "stb_type": "MAG250",
-                "sn": "1234567890123",
+                "sn": "0000000000000",
+                "ver": "ImageDescription: 0.2.18-r11-pub-254; Link: WiFi",
+                "hd": "1",
+                "num_bouquets": "7",
+                "num_sub_bouquets": "0",
+                "itv_bouquets_top": "1",
             }
         )
 

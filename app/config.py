@@ -217,6 +217,16 @@ class Settings(BaseSettings):
         alias="STREAM_AUTH_CACHE_TTL",
     )
 
+    x_user_agent: str = Field(
+        default="model=MAG250;version=218;sig=6fb2447331356ecca928394477c0500e2630cc3c",
+        description=(
+            "X-User-Agent header value sent to portals. Default matches the "
+            "standard MAG250 signature format; some streaming WAFs instead "
+            "whitelist-match the canonical 'Model: MAG250; Link: WiFi'."
+        ),
+        alias="X_USER_AGENT",
+    )
+
     # =============================================================================
     # Circuit Breaker Configuration
     # =============================================================================

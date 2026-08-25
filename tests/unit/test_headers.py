@@ -11,6 +11,7 @@ from unittest.mock import patch
 from app.services.stalker_async import StalkerClient
 from app.services.stalker import StalkerPortal
 from app.services.base import MAG200_USER_AGENT, MAG250_XUA
+from app.config import settings
 
 
 class TestAsyncHeaders:
@@ -45,6 +46,25 @@ class TestAsyncHeaders:
         )
         headers = client._get_headers()
         assert headers["Referer"] == "http://example.com/stalker_portal/c/"
+
+    @pytest.mark.asyncio
+    async def test_async_headers_x_user_agent_override(self):
+        """Test that a custom x_user_agent overrides the configured default."""
+        client = StalkerClient(
+            "http://example.com",
+            "00:11:22:33:44:55",
+            x_user_agent="Model: MAG250; Link: WiFi",
+        )
+        headers = client._get_headers()
+        assert headers["X-User-Agent"] == "Model: MAG250; Link: WiFi"
+
+    @pytest.mark.asyncio
+    async def test_async_headers_x_user_agent_defaults_to_setting(self):
+        """Test that the default X-User-Agent comes from the configured setting."""
+        client = StalkerClient("http://example.com", "00:11:22:33:44:55")
+        headers = client._get_headers()
+        assert headers["X-User-Agent"] == settings.x_user_agent
+        assert headers["X-User-Agent"] == MAG250_XUA
 
 
 class TestSyncHeaders:

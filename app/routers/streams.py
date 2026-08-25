@@ -22,7 +22,7 @@ from slowapi.util import get_remote_address
 from app.config import settings
 from app.models import StreamRequest
 from app.services.stalker_async import StalkerClient
-from app.services.base import MAG200_USER_AGENT, MAG250_XUA
+from app.services.base import MAG200_USER_AGENT
 from app.services.url_validator import is_safe_url, is_safe_url_with_redirect_check
 from app.services.text_parser import clean_stalker_url
 
@@ -623,37 +623,29 @@ async def get_link(request: Request, req: StreamRequest):
         logger.info(f"get_link called: url={req.url}, mac={req.mac}, cmd={req.cmd}")
 
         # Always perform handshake first to establish session cookies.
-        # Even when the cmd is a direct URL (ffmpeg/http prefix), the streaming
-        # server requires an active session (token cookie) — without it, servers
-        # return 458 (Stalker WAF: invalid token).
         handshake_success = await client.handshake()
         logger.info(f"Handshake result: {handshake_success}")
         if not handshake_success:
             logger.warning(f"Handshake failed for {req.url} with MAC {req.mac}")
             raise HTTPException(status_code=400, detail="Portal handshake failed")
+        # Some portals need a profile fetch between handshake and create_link to
+        # activate the session — strict ones return dead links without it.
+        # A failure here must never abort playback.
+        try:
+            await client.get_profile()
+        except Exception as e:
+            logger.warning(
+                f"get_profile failed for {req.url} with MAC {req.mac}: {e}"
+            )
 
-        # Determine if cmd is already a full stream URL (optionally prefixed with "ffmpeg ")
-        raw_cmd = req.cmd.strip() if req.cmd else ""
-        direct_url = None
-        if raw_cmd:
-            lower_cmd = raw_cmd.lower()
-            if lower_cmd.startswith("ffmpeg "):
-                direct_url = raw_cmd[7:].strip()
-            elif lower_cmd.startswith("http://") or lower_cmd.startswith("https://"):
-                direct_url = raw_cmd
-
-        if direct_url:
-            logger.info(f"Direct stream URL detected, using after handshake")
-            target = direct_url
-        else:
-            res = await client.create_link(req.cmd)
-            logger.info(f"create_link result: {res}")
-            target = None
-            if isinstance(res, str):
-                target = res
-            elif isinstance(res, dict) and "cmd" in res:
-                target = res["cmd"]
-            logger.info(f"Extracted target: {target}")
+        res = await client.create_link(req.cmd)
+        logger.info(f"create_link result: {res}")
+        target = None
+        if isinstance(res, str):
+            target = res
+        elif isinstance(res, dict) and "cmd" in res:
+            target = res["cmd"]
+        logger.info(f"Extracted target: {target}")
 
         if not target:
             raise HTTPException(
@@ -753,7 +745,7 @@ def check_stream(
 
         headers = {
             "User-Agent": MAG200_USER_AGENT,
-            "X-User-Agent": MAG250_XUA,
+            "X-User-Agent": settings.x_user_agent,
             "Accept": "*/*",
             "Accept-Charset": "UTF-8,*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
@@ -912,7 +904,7 @@ def proxy_stream(
         # Build base headers - must match exactly what stalker_async.py sends to bypass WAF
         headers = {
             "User-Agent": MAG200_USER_AGENT,
-            "X-User-Agent": MAG250_XUA,
+            "X-User-Agent": settings.x_user_agent,
             "Accept": "*/*",
             "Accept-Charset": "UTF-8,*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",

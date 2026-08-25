@@ -124,6 +124,129 @@ class TestAsyncTokenRefresh:
             # The update_cookies should have been called at least twice: clear and set
             assert mock_session.cookie_jar.update_cookies.call_count >= 2
 
+    @pytest.mark.asyncio
+    async def test_request_200_auth_failure_triggers_handshake_and_retry(self):
+        """Test that an HTTP 200 body signaling auth failure causes handshake and retry."""
+        with patch(
+            "app.services.stalker_async.aiohttp.ClientSession"
+        ) as mock_session_class:
+            mock_session = MagicMock()
+            mock_session.cookie_jar = MagicMock()
+            mock_session_class.return_value = mock_session
+
+            base_url = "http://example.com"
+            client = StalkerClient(base_url, "00:11:22:33:44:55")
+            client._active_path = f"{base_url}/server/load.php"
+
+            # Responses: initial 200 auth failure, handshake 200, retry 200 with data
+            mock_resp_fail = make_async_response(
+                200, {"js": {"authorization_failed": True}}
+            )
+            mock_resp_handshake = make_async_response(
+                200, {"js": {"token": "new_token"}}
+            )
+            mock_resp_retry = make_async_response(
+                200, {"js": {"result": {"data": "value"}}}
+            )
+
+            mock_session.get = MagicMock(
+                side_effect=[mock_resp_fail, mock_resp_handshake, mock_resp_retry]
+            )
+
+            result = await client._request({"type": "stb", "action": "get_profile"})
+
+            assert result == {"data": "value"}
+            assert client._token == "new_token"
+            assert mock_session.get.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_request_200_error_message_triggers_handshake_and_retry(self):
+        """Test that an 'error' string containing 'authorization' triggers refresh."""
+        with patch(
+            "app.services.stalker_async.aiohttp.ClientSession"
+        ) as mock_session_class:
+            mock_session = MagicMock()
+            mock_session.cookie_jar = MagicMock()
+            mock_session_class.return_value = mock_session
+
+            base_url = "http://example.com"
+            client = StalkerClient(base_url, "00:11:22:33:44:55")
+            client._active_path = f"{base_url}/server/load.php"
+
+            mock_resp_fail = make_async_response(
+                200, {"error": "Authorization failed"}
+            )
+            mock_resp_handshake = make_async_response(
+                200, {"js": {"token": "fresh_token"}}
+            )
+            mock_resp_retry = make_async_response(
+                200, {"js": {"result": {"ok": True}}}
+            )
+
+            mock_session.get = MagicMock(
+                side_effect=[mock_resp_fail, mock_resp_handshake, mock_resp_retry]
+            )
+
+            result = await client._request({"type": "stb", "action": "get_profile"})
+
+            assert result == {"ok": True}
+            assert mock_session.get.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_request_auth_failure_retries_only_once(self):
+        """Test that a persistent auth failure does not loop the handshake."""
+        with patch(
+            "app.services.stalker_async.aiohttp.ClientSession"
+        ) as mock_session_class:
+            mock_session = MagicMock()
+            mock_session.cookie_jar = MagicMock()
+            mock_session_class.return_value = mock_session
+
+            base_url = "http://example.com"
+            client = StalkerClient(base_url, "00:11:22:33:44:55")
+            client._active_path = f"{base_url}/server/load.php"
+
+            fail_body = {"js": {"authorization_failed": True}}
+            handshake_body = {"js": {"token": "t"}}
+
+            responses = [
+                make_async_response(200, fail_body),
+                make_async_response(200, handshake_body),
+                make_async_response(200, fail_body),
+            ]
+            mock_session.get = MagicMock(side_effect=responses)
+
+            result = await client._request({"type": "stb", "action": "get_profile"})
+
+            assert result == {"authorization_failed": True}
+            assert mock_session.get.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_request_full_returns_auth_failure_structure(self):
+        """Test that _request_full surfaces auth failures without retrying."""
+        with patch(
+            "app.services.stalker_async.aiohttp.ClientSession"
+        ) as mock_session_class:
+            mock_session = MagicMock()
+            mock_session.cookie_jar = MagicMock()
+            mock_session_class.return_value = mock_session
+
+            base_url = "http://example.com"
+            client = StalkerClient(base_url, "00:11:22:33:44:55")
+            client._active_path = f"{base_url}/server/load.php"
+
+            mock_resp_fail = make_async_response(
+                200, {"js": {"authorization_failed": True}}
+            )
+            mock_session.get = MagicMock(return_value=mock_resp_fail)
+
+            result = await client._request_full(
+                {"type": "stb", "action": "get_profile"}
+            )
+
+            assert result["result"] == {"authorization_failed": True}
+            assert mock_session.get.call_count == 1
+
 
 class TestSyncTokenRefresh:
     """Tests for sync client automatic token refresh."""
