@@ -5,5 +5,6 @@ pydantic
 pydantic-settings
 slowapi
 aiohttp
+pytest
 pytest-asyncio
 cachetools
