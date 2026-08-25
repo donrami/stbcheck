@@ -30,28 +30,6 @@ def client(app):
 
 
 # =============================================================================
-# Mock Fixtures for StalkerPortal
-# =============================================================================
-
-@pytest.fixture
-def mock_stalker_portal():
-    """Create a mock StalkerPortal instance."""
-    with patch("app.services.stalker.StalkerPortal") as mock_class:
-        mock_instance = MagicMock()
-        mock_class.return_value = mock_instance
-        yield mock_instance
-
-
-@pytest.fixture
-def mock_session():
-    """Create a mock requests.Session for StalkerPortal tests."""
-    with patch("app.services.stalker.requests.Session") as mock_session_class:
-        mock_session_instance = MagicMock()
-        mock_session_class.return_value = mock_session_instance
-        yield mock_session_instance
-
-
-# =============================================================================
 # Sample Data Fixtures
 # =============================================================================
 

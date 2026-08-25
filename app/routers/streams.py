@@ -13,11 +13,15 @@ from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
+from requests.exceptions import (
+    ConnectionError as RequestsConnectionError,
+    ChunkedEncodingError,
+    Timeout,
+)
 from cachetools import TTLCache
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.limiter import limiter
 
 from app.config import settings
 from app.models import StreamRequest
@@ -29,8 +33,6 @@ from app.services.text_parser import clean_stalker_url
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Rate limiter instance
-limiter = Limiter(key_func=get_remote_address)
 
 
 def _get_stream_timeout() -> int:
@@ -121,132 +123,6 @@ _logo_cache: TTLCache = TTLCache(
     maxsize=settings.logo_cache_maxsize, ttl=settings.logo_cache_ttl
 )
 
-# Optional Redis cache for multi-worker deployments
-_redis_client = None
-_use_redis = False
-
-if settings.redis_url:
-    try:
-        import redis
-
-        _redis_client = redis.from_url(settings.redis_url, decode_responses=False)
-        _redis_client.ping()
-        _use_redis = True
-        logger.info(f"Redis connected for shared logo cache: {settings.redis_url}")
-    except Exception as e:
-        logger.warning(f"Redis connection failed, falling back to in-memory cache: {e}")
-        _redis_client = None
-        _use_redis = False
-
-
-# =============================================================================
-# Circuit Breaker & Health Monitoring
-# =============================================================================
-
-
-@dataclass
-class CircuitState:
-    """State for circuit breaker per target URL."""
-
-    consecutive_failures: int = 0
-    last_failure_time: float = 0.0
-    open_until: float = 0.0  # 0 means closed, >0 means open until that time
-
-    def record_success(self):
-        """Reset failure count on success."""
-        self.consecutive_failures = 0
-        self.open_until = 0.0
-
-    def record_failure(self, failure_threshold: int, open_duration: float):
-        """Record a failure and potentially open the circuit."""
-        self.consecutive_failures += 1
-        self.last_failure_time = time.time()
-        if self.consecutive_failures >= failure_threshold:
-            self.open_until = self.last_failure_time + open_duration
-
-    def is_open(self) -> bool:
-        """Check if circuit is currently open."""
-        if self.open_until > 0:
-            if time.time() < self.open_until:
-                return True
-            else:
-                # Circuit has been open long enough, allow a half-open trial
-                self.open_until = 0  # Reset for half-open attempt
-                return False
-        return False
-
-
-class StreamHealthMonitor:
-    """Monitor stream health and implement circuit breaker pattern."""
-
-    def __init__(
-        self,
-        failure_threshold: int = 3,
-        open_duration: float = 300.0,  # 5 minutes
-        recovery_window: float = 600.0,  # 10 minutes for tracking
-    ):
-        self.failure_threshold = failure_threshold
-        self.open_duration = open_duration
-        self.recovery_window = recovery_window
-        self.circuits: Dict[str, CircuitState] = {}
-        # Also track domain-level circuits (extract netloc from URL)
-        self.domain_circuits: Dict[str, CircuitState] = {}
-
-    def _get_circuit(self, url: str, use_domain: bool = True) -> CircuitState:
-        """Get or create circuit state for a URL or domain."""
-        key = url if not use_domain else urlparse(url).netloc
-        if key not in self.circuits:
-            self.circuits[key] = CircuitState()
-        return self.circuits[key]
-
-    def should_skip(self, url: str, use_domain: bool = True) -> bool:
-        """Check if we should skip this URL due to circuit breaker."""
-        circuit = self._get_circuit(url, use_domain)
-        return circuit.is_open()
-
-    def record_stream_success(self, url: str, use_domain: bool = True):
-        """Record successful stream access."""
-        circuit = self._get_circuit(url, use_domain)
-        circuit.record_success()
-
-    def record_stream_failure(
-        self, url: str, is_error: bool = True, use_domain: bool = True
-    ):
-        """Record stream access failure."""
-        if is_error:
-            circuit = self._get_circuit(url, use_domain)
-            circuit.record_failure(self.failure_threshold, self.open_duration)
-
-    def get_stats(self) -> dict:
-        """Get circuit breaker statistics for monitoring."""
-        return {
-            "total_circuits": len(self.circuits),
-            "open_circuits": sum(1 for c in self.circuits.values() if c.is_open()),
-            "circuits": [
-                {
-                    "key": k,
-                    "consecutive_failures": c.consecutive_failures,
-                    "open_until": c.open_until,
-                    "is_open": c.is_open(),
-                }
-                for k, c in self.circuits.items()
-            ],
-        }
-
-
-# Initialize global health monitor with configurable settings
-_stream_monitor = StreamHealthMonitor(
-    failure_threshold=settings.circuit_breaker_threshold,
-    open_duration=settings.circuit_breaker_duration,
-)
-
-# Track overall proxy_stream and proxy_logo health
-_stream_proxy_stats = {
-    "total_requests": 0,
-    "successful": 0,
-    "failed": 0,
-    "circuit_opens": 0,
-}
 
 # In-memory cache for stream authentication (session cookies)
 # Key format: "normalized_portal_url:mac_clean" -> {"cookies": dict, "timestamp": float}
@@ -332,38 +208,14 @@ def _get_stream_auth_data(portal_url: str, mac: str) -> dict:
 
 
 def _get_cached_logo(target: str):
-    """Get logo from cache (Redis or in-memory)."""
-    if _use_redis and _redis_client:
-        try:
-            cached = _redis_client.get(f"logo:{target}")
-            if cached:
-                return cached
-        except Exception as e:
-            logger.warning(f"Redis get error: {e}")
-    else:
-        # TTLCache handles expiration automatically
-        return _logo_cache.get(target)
-    return None
+    """Get logo from in-memory cache."""
+    return _logo_cache.get(target)
 
 
 def _set_cached_logo(target: str, data: bytes, ttl: Optional[int] = None):
-    """Store logo in cache (Redis or in-memory).
-
-    Args:
-        target: The base64-encoded target URL
-        data: The image data bytes
-        ttl: Optional custom TTL (uses settings.logo_cache_ttl if None)
-    """
-    if _use_redis and _redis_client:
-        try:
-            expiry = ttl if ttl is not None else settings.logo_cache_ttl
-            _redis_client.setex(f"logo:{target}", expiry, data)
-        except Exception as e:
-            logger.warning(f"Redis set error: {e}")
-    else:
-        # For TTLCache, custom TTL not supported per entry
-        # But we can still cache the value, it will use default TTL
-        _logo_cache[target] = data
+    """Store logo in cache. ponytail: per-entry ttl ignored (TTLCache is global);
+    failure entries just expire with the default TTL."""
+    _logo_cache[target] = data
 
 
 # Default placeholder image (1x1 transparent PNG)
@@ -512,38 +364,10 @@ def proxy_logo(request: Request, target: str):
             )
             return Response(status_code=403)
 
-        # Check circuit breaker (domain-level for shared failure domains)
-        if _stream_monitor.should_skip(real_url, use_domain=True):
-            _stream_monitor.record_stream_failure(
-                real_url, is_error=True, use_domain=True
-            )
-            _stream_proxy_stats["circuit_opens"] += 1
-            logger.warning(
-                f"Circuit breaker open for domain {urlparse(real_url).netloc}, skipping logo fetch"
-            )
-            # Calculate retry-after based on remaining open time
-            circuit = _stream_monitor._get_circuit(real_url, use_domain=True)
-            retry_after = int(max(0, circuit.open_until - time.time()))
-            retry_after = min(retry_after, 300)  # Cap at 5 minutes
-            # Return placeholder even when circuit is open to avoid broken images
-            return Response(
-                status_code=200,
-                content=_DEFAULT_PLACEHOLDER_PNG,
-                media_type="image/png",
-                headers={
-                    "Cache-Control": f"public, max-age={retry_after}",
-                    "X-Logo-Proxy": "circuit-open",
-                    "Retry-After": str(retry_after),
-                },
-            )
-
         # Fetch logo data with retry logic for rate limits
         try:
             response_bytes = _fetch_logo_with_retry(real_url)
         except requests.exceptions.HTTPError as e:
-            _stream_monitor.record_stream_failure(
-                real_url, is_error=True, use_domain=True
-            )
             if e.response is not None and e.response.status_code >= 400:
                 logger.warning(f"Logo proxy HTTP error for {real_url}: {e}")
                 # Cache the failure for 30 seconds to avoid hammering failing domains
@@ -560,31 +384,19 @@ def proxy_logo(request: Request, target: str):
                 )
             raise
         except Exception as e:
-            _stream_monitor.record_stream_failure(
-                real_url, is_error=True, use_domain=True
-            )
             logger.error(f"Logo proxy error for {real_url}: {e}")
-            # Cache the failure for 30 seconds to avoid hammering failing domains
-            _set_cached_logo(target, _DEFAULT_PLACEHOLDER_PNG, ttl=30)
-            # Return placeholder image instead of 502
+            _set_cached_logo(target, _DEFAULT_PLACEHOLDER_PNG)
             return Response(
                 status_code=200,
                 content=_DEFAULT_PLACEHOLDER_PNG,
                 media_type="image/png",
                 headers={
-                    "Cache-Control": f"public, max-age=30",
+                    "Cache-Control": "public, max-age=30",
                     "X-Logo-Proxy": "fallback",
                 },
             )
-        else:
-            # Record success
-            _stream_monitor.record_stream_success(real_url, use_domain=True)
-            _stream_proxy_stats["total_requests"] += 1
-            _stream_proxy_stats["successful"] += 1
-
-        # Cache the successful response (Redis or in-memory)
+        # Cache the successful response
         _set_cached_logo(target, response_bytes)
-
         return Response(
             content=response_bytes,
             media_type="image/png",
@@ -811,13 +623,6 @@ def check_stream(
             except Exception:
                 pass
 
-        # Record circuit breaker status
-        if r.status_code < 400:
-            _stream_monitor.record_stream_success(real_url, use_domain=True)
-        else:
-            _stream_monitor.record_stream_failure(
-                real_url, is_error=True, use_domain=True
-            )
 
         result = {
             "status": "success" if r.status_code < 400 else "error",
@@ -829,10 +634,6 @@ def check_stream(
         return result
     except Exception as e:
         logger.error(f"Stream check error: {e}")
-        if "real_url" in locals():
-            _stream_monitor.record_stream_failure(
-                real_url, is_error=True, use_domain=True
-            )
         return {"status": "error", "code": 500, "message": str(e)}
     finally:
         # Close the response if it was created
@@ -879,21 +680,6 @@ def proxy_stream(
         if not is_safe_url(real_url):
             logger.warning(f"Blocked unsafe SSRF attempt to: {real_url}")
             return Response(status_code=403)
-
-        # Check circuit breaker (domain-level for shared failure domains)
-        if _stream_monitor.should_skip(real_url, use_domain=True):
-            _stream_monitor.record_stream_failure(
-                real_url, is_error=True, use_domain=True
-            )
-            _stream_proxy_stats["circuit_opens"] += 1
-            logger.warning(
-                f"Circuit breaker open for domain {urlparse(real_url).netloc}, skipping stream proxy"
-            )
-            return Response(
-                status_code=503,
-                content=b"",
-                headers={"Retry-After": str(settings.circuit_breaker_duration)},
-            )
 
         # Normalize MAC address - try both with and without colons
         mac_clean = mac.upper().replace(":", "")
@@ -942,7 +728,6 @@ def proxy_stream(
             headers["Range"] = client_range
 
         def iterfile():
-            first_chunk_yielded = False
             r = None
             # Create a mutable reference to headers so inner assignments don't create new locals
             _headers = headers
@@ -1061,9 +846,6 @@ def proxy_stream(
                                 logger.warning(
                                     f"Blocked unsafe redirect from {real_url} to {redirect_location} from IP {request.client.host}"
                                 )
-                                _stream_monitor.record_stream_failure(
-                                    real_url, is_error=True, use_domain=True
-                                )
                                 if r:
                                     r.close()
                                 return
@@ -1082,9 +864,6 @@ def proxy_stream(
 
                 # Handle error status codes
                 if r.status_code >= 400:
-                    _stream_monitor.record_stream_failure(
-                        real_url, is_error=True, use_domain=True
-                    )
                     if r.status_code in (401, 458):
                         # Invalidate the cached session and return error so frontend can retry
                         # 458 is the Stalker WAF status for "invalid token" — the token cookie
@@ -1129,13 +908,6 @@ def proxy_stream(
                                 f"[proxy_stream] Chunk #{chunk_count}: size={chunk_size} bytes, total={total_bytes}"
                             )
                         yield chunk
-                        if not first_chunk_yielded:
-                            _stream_monitor.record_stream_success(
-                                real_url, use_domain=True
-                            )
-                            _stream_proxy_stats["total_requests"] += 1
-                            _stream_proxy_stats["successful"] += 1
-                            first_chunk_yielded = True
                     else:
                         logger.debug("[proxy_stream] Received empty chunk, breaking")
                         break
@@ -1144,9 +916,6 @@ def proxy_stream(
                 )
                 r.close()
             except Exception as e:
-                _stream_monitor.record_stream_failure(
-                    real_url, is_error=True, use_domain=True
-                )
                 # Invalidate auth cache on streaming exceptions too - could be auth-related
                 error_str = str(e).lower()
                 if (
@@ -1186,62 +955,3 @@ def proxy_stream(
         raise HTTPException(status_code=500, detail="Stream initialization failed")
 
 
-@router.get("/api/health/circuits")
-def health_circuits(request: Request):
-    """
-    Get circuit breaker statistics and overall proxy health.
-    For monitoring and debugging purposes.
-
-    Returns:
-        Dictionary with circuit breaker stats and proxy health metrics
-    """
-    stats = _stream_monitor.get_stats()
-    stats.update(_stream_proxy_stats.copy())
-    return stats
-
-
-@router.post("/api/health/circuits/reset")
-@limiter.limit("10/minute")
-def reset_circuits(request: Request, domain: Optional[str] = None):
-    """
-    Reset circuit breaker for a specific domain or all domains.
-
-    Use this when streams are failing with 503 due to circuit breaker being open.
-
-    Args:
-        domain: Optional specific domain to reset. If omitted, resets all circuits.
-
-    Returns:
-        Dictionary with reset status
-    """
-    if domain:
-        # Reset specific domain circuit
-        # The circuit key is the netloc (domain:port)
-        circuit_key = domain
-        if circuit_key in _stream_monitor.circuits:
-            circuit = _stream_monitor.circuits[circuit_key]
-            circuit.consecutive_failures = 0
-            circuit.open_until = 0.0
-            logger.info(f"Circuit breaker reset for domain: {domain}")
-            return {
-                "status": "success",
-                "message": f"Circuit reset for {domain}",
-                "domain": domain,
-            }
-        else:
-            return {
-                "status": "not_found",
-                "message": f"No circuit found for {domain}",
-                "domain": domain,
-            }
-    else:
-        # Reset all circuits
-        for circuit in _stream_monitor.circuits.values():
-            circuit.consecutive_failures = 0
-            circuit.open_until = 0.0
-        logger.info("All circuit breakers reset")
-        return {
-            "status": "success",
-            "message": "All circuits reset",
-            "reset_count": len(_stream_monitor.circuits),
-        }

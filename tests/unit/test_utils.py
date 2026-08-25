@@ -149,11 +149,10 @@ class TestDetectExpiry:
         assert result in ["2025-12-31", "2026-01-01"]
 
     def test_detect_expiry_timestamp_format(self):
-        """Test detecting timestamp format."""
+        """Test detecting timestamp format (converted by with_source)."""
         data = {"expire_date": "1735689600"}  # Unix timestamp
         result = detect_expiry(data)
-        # The timestamp should be returned as is, not converted (conversion is separate)
-        assert result == "1735689600"
+        assert result == "2025-01-01 03:00:00"
 
     def test_expiry_priority_order_stalker_field_first(self):
         """Test that wrapper-specific fields have higher priority than Stalker fields."""
@@ -653,22 +652,7 @@ class TestParseExpiryDate:
         assert dt.tzinfo is None
 
     def test_parse_with_timezone_aware(self):
-        """Test parsing with timezone parameter (if pytz available)."""
-        try:
-            import pytz
-
-            # Use a specific timezone
-            dt = parse_expiry_date("2025-12-31 12:00:00", timezone="Europe/London")
-            assert dt is not None
-            # Should be timezone-aware
-            assert dt.tzinfo is not None
-        except ImportError:
-            pytest.skip("pytz not installed")
-
-    def test_parse_dateutil_fallback(self):
-        """Test that dateutil.parser is used as fallback."""
-        # A non-standard format that strptime won't parse but dateutil can
-        dt = parse_expiry_date("2025/12/31")
-        # This may or may not parse depending on dateutil; skip if None
-        if dt is None:
-            pytest.skip("dateutil not available or format not recognized")
+        """Test parsing with timezone parameter (zoneinfo)."""
+        dt = parse_expiry_date("2025-12-31 12:00:00", timezone="Europe/London")
+        assert dt is not None
+        assert dt.tzinfo is not None

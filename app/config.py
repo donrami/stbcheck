@@ -150,15 +150,6 @@ class Settings(BaseSettings):
     )
 
     # =============================================================================
-    # Redis Configuration (Optional - for shared logo cache across workers)
-    # =============================================================================
-    redis_url: str = Field(
-        default="",
-        description="Redis URL for shared logo cache (e.g., redis://localhost:6379/0). If empty, uses in-memory cache.",
-        alias="REDIS_URL",
-    )
-
-    # =============================================================================
     # Cache Configuration
     # =============================================================================
     logo_cache_maxsize: int = Field(
@@ -226,21 +217,6 @@ class Settings(BaseSettings):
         ),
         alias="X_USER_AGENT",
     )
-
-    # =============================================================================
-    # Circuit Breaker Configuration
-    # =============================================================================
-    circuit_breaker_threshold: int = Field(
-        default=10,
-        description="Number of consecutive failures before circuit breaker opens",
-        alias="CIRCUIT_BREAKER_THRESHOLD",
-    )
-    circuit_breaker_duration: int = Field(
-        default=30,
-        description="Duration in seconds to keep circuit breaker open before allowing retry",
-        alias="CIRCUIT_BREAKER_DURATION",
-    )
-
 
 # Global settings instance - imported by other modules
 settings = Settings()

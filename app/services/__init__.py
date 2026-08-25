@@ -4,9 +4,6 @@ Services module for STBcheck.
 Contains business logic for portal interactions and utilities.
 """
 
-from app.services.stalker import StalkerPortal
-
-# Re-export from new modules for backward compatibility
 from app.services.base import (
     PORTAL_HEADERS,
     MAG200_USER_AGENT,
@@ -23,7 +20,6 @@ from app.services.url_validator import (
 from app.services.text_parser import extract_portal_mac_pairs, clean_stalker_url
 
 __all__ = [
-    "StalkerPortal",
     # Base constants
     "PORTAL_HEADERS",
     "MAG200_USER_AGENT",

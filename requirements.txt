@@ -6,7 +6,5 @@ pydantic-settings
 python-multipart
 slowapi
 aiohttp
-pytz
-python-dateutil
 pytest-asyncio
 cachetools

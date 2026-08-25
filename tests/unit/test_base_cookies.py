@@ -8,34 +8,6 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from app.services.stalker_async import StalkerClient
-from app.services.stalker import StalkerPortal
-
-
-class TestSyncBaseCookies:
-    """Tests for StalkerPortal base cookies."""
-
-    def test_sync_session_has_base_cookies(self):
-        """Test that StalkerPortal session contains base cookies."""
-        portal = StalkerPortal("http://example.com", "00:11:22:33:44:55")
-        cookies = portal.session.cookies
-        # Check for mac cookie
-        mac_cookie = next((c for c in cookies if c.name == "mac"), None)
-        assert mac_cookie is not None
-        assert mac_cookie.value == "00:11:22:33:44:55"
-        # Check for stb_lang
-        lang_cookie = next((c for c in cookies if c.name == "stb_lang"), None)
-        assert lang_cookie is not None
-        assert lang_cookie.value == "en"
-        # Check for timezone
-        tz_cookie = next((c for c in cookies if c.name == "timezone"), None)
-        assert tz_cookie is not None
-        assert tz_cookie.value == "Europe/London"
-
-    def test_sync_base_cookies_normalized_mac(self):
-        """Test that MAC is normalized in cookies."""
-        portal = StalkerPortal("http://example.com", "aa:bb:cc:dd:ee:ff")
-        mac_cookie = next((c for c in portal.session.cookies if c.name == "mac"), None)
-        assert mac_cookie.value == "AA:BB:CC:DD:EE:FF"
 
 
 class TestAsyncBaseCookies:

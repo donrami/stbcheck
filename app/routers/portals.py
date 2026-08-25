@@ -14,8 +14,7 @@ from typing import Optional, List, Dict, Tuple
 import requests
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.limiter import limiter
 
 from app.config import settings
 from app.models import CheckRequest
@@ -24,8 +23,6 @@ from app.services.base import PORTAL_HEADERS
 from app.services.url_validator import is_safe_url, is_portal_url
 from app.services.text_parser import extract_portal_mac_pairs, clean_stalker_url
 
-# Rate limiter instance
-limiter = Limiter(key_func=get_remote_address)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
