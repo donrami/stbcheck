@@ -336,10 +336,7 @@ class TestCheckStreamEndpoint:
         encoded_origin = base64.b64encode(origin_url.encode()).decode()
 
         with patch("app.routers.streams.requests.get") as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_get.return_value.__enter__ = MagicMock(return_value=mock_response)
-            mock_get.return_value.__exit__ = MagicMock(return_value=False)
+            mock_get.return_value.status_code = 200
 
             response = client.get(
                 f"/api/check_stream?target={encoded_stream}&mac=00:11:22:33:44:55&origin={encoded_origin}"
@@ -356,10 +353,7 @@ class TestCheckStreamEndpoint:
         encoded_stream = base64.b64encode(stream_url.encode()).decode()
 
         with patch("app.routers.streams.requests.get") as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 403
-            mock_get.return_value.__enter__ = MagicMock(return_value=mock_response)
-            mock_get.return_value.__exit__ = MagicMock(return_value=False)
+            mock_get.return_value.status_code = 403
 
             response = client.get(
                 f"/api/check_stream?target={encoded_stream}&mac=00:11:22:33:44:55"

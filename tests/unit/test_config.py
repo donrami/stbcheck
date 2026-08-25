@@ -21,9 +21,7 @@ class TestSettings:
             settings = Settings(_env_file=None)
 
             assert settings.request_timeout == 10
-            assert (
-                settings.stream_timeout == 30
-            )  # Increased from 20 to 30 for slow streams
+            assert settings.stream_timeout == 60
             assert (
                 settings.logo_fetch_timeout == 15
             )  # Increased from 5 to 15 for slow CDNs
@@ -36,7 +34,7 @@ class TestSettings:
             )
             assert settings.server_host == "0.0.0.0"
             assert settings.server_port == 6767
-            assert settings.app_version == "1.0.1 - Playback Fixes"
+            assert settings.app_version == "1.1.0"
             assert settings.max_redirects == 10
 
     def test_get_cors_origins_list_wildcard(self):
