@@ -2,10 +2,8 @@
 URL validation and SSRF protection utilities.
 """
 
-import re
 import ipaddress
 from urllib.parse import urlparse
-from typing import Optional
 
 from app.config import settings
 
@@ -81,21 +79,6 @@ def is_safe_url(url_str: str, allow_redirects: bool = False) -> bool:
         return True
     except Exception:
         return False
-
-
-def is_safe_url_with_redirect_check(url_str: str) -> bool:
-    """
-    Validate URL and follow redirects to check the final destination.
-
-    Args:
-        url_str: URL string to validate
-
-    Returns:
-        True if URL is safe (initial and final destination), False otherwise
-    """
-    return is_safe_url(url_str, allow_redirects=True)
-
-
 def is_portal_url(url: str) -> bool:
     """
     Check if a URL appears to be a Stalker/Ministra portal URL.

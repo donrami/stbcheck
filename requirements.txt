@@ -3,7 +3,6 @@ uvicorn
 requests
 pydantic
 pydantic-settings
-python-multipart
 slowapi
 aiohttp
 pytest-asyncio

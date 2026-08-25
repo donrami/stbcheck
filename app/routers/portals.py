@@ -12,7 +12,7 @@ import logging
 from typing import Optional, List, Dict, Tuple
 
 import requests
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from app.limiter import limiter
 
@@ -21,7 +21,7 @@ from app.models import CheckRequest
 from app.services.stalker_async import StalkerClient
 from app.services.base import PORTAL_HEADERS
 from app.services.url_validator import is_safe_url, is_portal_url
-from app.services.text_parser import extract_portal_mac_pairs, clean_stalker_url
+from app.services.text_parser import extract_portal_mac_pairs
 
 
 logger = logging.getLogger(__name__)

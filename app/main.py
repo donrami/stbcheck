@@ -16,7 +16,8 @@ from slowapi import _rate_limit_exceeded_handler
 import uvicorn
 
 from app.config import settings
-from app.routers import portals_router, streams_router
+from app.routers.portals import router as portals_router
+from app.routers.streams import router as streams_router
 
 # Path to index.html relative to this file
 INDEX_HTML = Path(__file__).parent.parent / "index.html"

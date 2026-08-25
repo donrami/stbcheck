@@ -16,6 +16,7 @@ import hashlib
 from datetime import datetime
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+
 from urllib.parse import quote
 
 import aiohttp
@@ -507,10 +508,6 @@ class StalkerClient:
         )
         return False
 
-    def _clean_json(self, text: str) -> str:
-        """Clean JSON response from portal wrappers (kept for backward compatibility)."""
-        return clean_json_response(text)
-
     async def handshake(self) -> bool:
         """Public method to perform handshake (alias to _handshake)."""
         return await self._handshake()
@@ -770,41 +767,6 @@ class StalkerClient:
             }
         )
 
-    async def get_account_info(self) -> Optional[Dict[str, Any]]:
-        """Get account info from the portal."""
-        res = await self._request({"type": "stb", "action": "get_account_info"})
-        if res is None:
-            res = await self._request({"type": "stb", "action": "get_main_info"})
-        return res
-
-    async def get_itv_info(self) -> Optional[Dict[str, Any]]:
-        """Get ITV info from the portal."""
-        return await self._request({"type": "itv", "action": "get_itv_info"})
-
-    async def get_channels(self) -> Optional[Dict[str, Any]]:
-        """Get all channels from the portal."""
-        return await self._request({"type": "itv", "action": "get_all_channels"})
-
-    async def get_genres(self) -> Optional[Dict[str, Any]]:
-        """Get genres from the portal."""
-        return await self._request({"type": "itv", "action": "get_genres"})
-
-    async def get_itv_groups(self) -> Optional[Dict[str, Any]]:
-        """Get ITV groups from the portal."""
-        return await self._request({"type": "itv", "action": "get_itv_groups"})
-
-    async def get_short_genres(self) -> Optional[Dict[str, Any]]:
-        """Get short genres from the portal."""
-        return await self._request({"type": "itv", "action": "get_short_genres"})
-
-    async def get_all_itv_groups(self) -> Optional[Dict[str, Any]]:
-        """Get all ITV groups from the portal."""
-        return await self._request({"type": "itv", "action": "get_all_itv_groups"})
-
-    async def get_categories(self) -> Optional[Dict[str, Any]]:
-        """Get categories from the portal."""
-        return await self._request({"type": "itv", "action": "get_categories"})
-
     async def create_link(
         self,
         cmd: str,
@@ -883,37 +845,3 @@ async def check_single_portal(portal_url: str, mac_address: str) -> Dict[str, An
         }
 
 
-def main() -> None:
-    """
-    Main entry point for testing the StalkerClient from the command line.
-    """
-    import sys
-
-    print("=== Stalker Async Client Test ===")
-
-    if len(sys.argv) >= 3:
-        url = sys.argv[1]
-        mac = sys.argv[2]
-    else:
-        url = "http://example.com"
-        mac = "00:1A:2B:3C:4D:5E"
-        print(f"Using demo values: URL={url}, MAC={mac}")
-        print(
-            "To test real portal: python stalker_client.py <portal_url> <mac_address>\n"
-        )
-
-    async def run_test():
-        result = await check_single_portal(url, mac)
-        print("\nResult:")
-        print(f"  URL:   {result['url']}")
-        print(f"  MAC:   {result['mac']}")
-        print(f"  Status: {result['status']}")
-        print(f"  Expiry: {result['expiration']}")
-        if result["error"]:
-            print(f"  Error:  {result['error']}")
-
-    asyncio.run(run_test())
-
-
-if __name__ == "__main__":
-    main()

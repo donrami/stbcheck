@@ -4,7 +4,7 @@ Shared constants and base utilities for Stalker services.
 
 import json
 import re
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any
 
 # MAG200 User-Agent string (used for portal headers)
 MAG200_USER_AGENT = (

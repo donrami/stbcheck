@@ -7,9 +7,7 @@ import binascii
 import ipaddress
 import logging
 import time
-import uuid
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Optional
 from urllib.parse import urlparse
 
 import requests
@@ -27,7 +25,7 @@ from app.config import settings
 from app.models import StreamRequest
 from app.services.stalker_async import StalkerClient
 from app.services.base import MAG200_USER_AGENT
-from app.services.url_validator import is_safe_url, is_safe_url_with_redirect_check
+from app.services.url_validator import is_safe_url
 from app.services.text_parser import clean_stalker_url
 
 logger = logging.getLogger(__name__)
@@ -508,9 +506,6 @@ async def get_link(request: Request, req: StreamRequest):
             f"/api/proxy_stream?target={b64_url}&mac={req.mac}&origin={b64_origin}"
         )
         return {"url": proxy_url}
-    raise HTTPException(
-        status_code=400, detail="Could not create link or link not found"
-    )
 
 
 @router.get("/api/check_stream")
