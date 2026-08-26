@@ -281,7 +281,7 @@ stbcheck/
 
 ## Contributing
 
-Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md); the short version:
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md); the short version:
 
 - All tests pass (`pytest`)
 - Code follows existing style (type hints, docstrings, `ruff` formatting)
